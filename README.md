@@ -1,5 +1,9 @@
 # myapp
 
+基于ebpf的通信中间件验证demo
+
+之后应该会想一个好名字
+
 ## Prerequisites
 
 1. stable rust toolchains: `rustup toolchain install stable`
