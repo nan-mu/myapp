@@ -4,6 +4,13 @@
 
 之后应该会想一个好名字
 
+## 日志
+
+现在进行了几次测试，发现程序只能在100Hz下工作良好。等效流量为4.8KB。我个人认为远未达到预期。现在考虑以下改进：
+* 让程序工作在两个树莓派上，减少wsl可能带来的影响
+* 现在ebpf的逻辑是正确的包会丢弃，考虑抓包检查它是否handle了所有目标流量。有漏的就说明性能不达标。
+* 完善测试脚本，修改为Rust。
+
 ## Prerequisites
 
 1. stable rust toolchains: `rustup toolchain install stable`
