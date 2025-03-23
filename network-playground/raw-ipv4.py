@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # Description:
 # * 通过原始套接字发送IPv4数据包来测试eBPF程序。
 # * 将持续以100Hz的频率发送直到人工中断。
@@ -6,9 +7,7 @@
 import socket
 import random
 import struct
-
-# 创建原始套接字
-s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_RAW)
+import time
 
 # 随机生成负载
 # 16字节数据。假设传感器传输两个u64。
@@ -20,7 +19,7 @@ data = struct.pack('!QQ', u64_1, u64_2)  # 使用struct打包两个64位无符�
 ip_header = struct.pack(
     '!BBHHHBBH4s4s',
     0x45,  # 版本(4)和头部长度(5) -> 0x45
-    44,  # 服务类型，用于区分其他数据包。ebpf程序将检测该类型数据包。
+    104,  # 服务类型，用于区分其他数据包。ebpf程序将检测该类型数据包。
     20 + len(data),  # 总长度：IP头部+数据
     random.randint(0, 65535),  # 标识符（随机）
     0,  # 标志和片偏移
@@ -41,7 +40,7 @@ def checksum(data):
     return ~s & 0xFFFF
 
 # 计算最终IP头部（仅需一次）
-final_ip_header = pre_ip_header[:10] + struct.pack('!H', checksum(pre_ip_header)) + pre_ip_header[12:]
+final_ip_header = ip_header[:10] + struct.pack('!H', checksum(ip_header)) + ip_header[12:]
 
 # 仅创建一次套接字
 s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_RAW)
