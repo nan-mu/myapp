@@ -9,11 +9,25 @@ import random
 import struct
 import time
 
-# 随机生成负载
-# 16字节数据。假设传感器传输两个u64。
-u64_1 = random.getrandbits(64)
-u64_2 = random.getrandbits(64)
-data = struct.pack('!QQ', u64_1, u64_2)  # 使用struct打包两个64位无符号整数
+payload_size = 4093 * 8  # 字节数，64个u64
+# 创建随机数据
+data = bytes([random.randint(0, 255) for _ in range(payload_size)])
+
+# 打印data的十六进制表示
+def hexdump(data):
+    """以十六进制格式打印数据，类似于hexdump工具的输出"""
+    result = []
+    for i in range(0, len(data), 16):
+        chunk = data[i:i+16]
+        hex_values = ' '.join(f'{b:02x}' for b in chunk)
+        # 对齐十六进制值
+        hex_values = hex_values.ljust(48)
+        ascii_values = ''.join(chr(b) if 32 <= b <= 126 else '.' for b in chunk)
+        result.append(f'{i:08x}  {hex_values}  |{ascii_values}|')
+    return '\n'.join(result)
+
+print("Payload in hex:")
+print(hexdump(data))
 
 # IP头部
 ip_header = struct.pack(

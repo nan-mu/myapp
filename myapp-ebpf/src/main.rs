@@ -22,11 +22,13 @@ pub fn myapp(ctx: XdpContext) -> u32 {
         Err(_) => xdp_action::XDP_ABORTED,
     }
 }
-// 计划传输的数据大小
-const DATA_SIZE: usize = 16;
+
+// 计划传输几个u64大小
+const U64_COUNT: usize = 4093;
+const DATA_SIZE: usize = U64_COUNT * 8;
 
 #[map(name = "TARGET_MAP")]
-static mut TARGET_MAP: RingBuf = RingBuf::with_byte_size((DATA_SIZE * 1024) as u32, 0);
+static mut TARGET_MAP: RingBuf = RingBuf::with_byte_size((DATA_SIZE) as u32, 0);
 
 fn try_myapp(ctx: XdpContext) -> Result<u32, ()> {
     // 理论上，该程序只会关注特定的数据包，所以将优先判断最小概率条件
@@ -60,7 +62,7 @@ fn try_myapp(ctx: XdpContext) -> Result<u32, ()> {
 
     unsafe {
         #[allow(static_mut_refs)]
-        let reserved = TARGET_MAP.reserve::<[u64; 2]>(0);
+        let reserved = TARGET_MAP.reserve::<[u64; U64_COUNT]>(0);
         match reserved {
             Some(mut entry) => {
                 // 拷贝DATA_SIZE字节数据到ring_buf

@@ -17,6 +17,8 @@ struct Opt {
     iface: String,
 }
 
+const U64_COUNT: usize = 4093;
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let opt = Opt::parse();
@@ -75,25 +77,54 @@ async fn main() -> anyhow::Result<()> {
         let mut handle = async move || {
             let mut success = 0 as u64;
             let mut fail = FaillType::default();
-            let mut data = [0u64; 2];
+            let mut data = [0u64; U64_COUNT];
             loop {
                 while let Ok(mut guard) = poll.readable_mut().await {
                     if let Some(new_data) = guard.get_inner_mut().next() {
-                        if new_data.len() == std::mem::size_of::<[u64; 2]>() {
+                        if new_data.len() == std::mem::size_of::<[u64; U64_COUNT]>() {
                             let val = unsafe {
-                                std::ptr::read_unaligned(new_data.as_ptr() as *const [u64; 2])
+                                std::ptr::read_unaligned(
+                                    new_data.as_ptr() as *const [u64; U64_COUNT]
+                                )
                             };
                             drop(new_data);
-                            if data == [0, 0] {
-                                println!("工作线程第一次成功");
+                            if data[0] == 0 {
                                 data = val;
                                 success += 1;
                                 tx_success
                                     .send(success)
                                     .expect("发送成功次数失败，考虑外部干预");
+                                println!("工作线程第一次成功");
+                                // Print the data in hexdump format
+                                let bytes: Vec<u8> = data.iter()
+                                    .flat_map(|&val| val.to_le_bytes().to_vec())
+                                    .collect();
+
+                                for (i, chunk) in bytes.chunks(16).enumerate() {
+                                    // Print the offset
+                                    print!("{:08x}  ", i * 16);
+                                    
+                                    // Print hex values
+                                    for &byte in chunk {
+                                        print!("{:02x} ", byte);
+                                    }
+                                    
+                                    // Add padding if needed
+                                    for _ in 0..(16 - chunk.len()) {
+                                        print!("   ");
+                                    }
+                                    
+                                    // Print ASCII representation
+                                    print!(" |");
+                                    for &byte in chunk {
+                                        let c = if byte >= 32 && byte <= 126 { byte as char } else { '.' };
+                                        print!("{}", c);
+                                    }
+                                    println!("|");
+                                }
                             } else {
-                                if data[0] == val[0] {
-                                    // 模糊匹配，我简单认为没必要每个字节都一样
+                                // Check if all bytes match (full comparison)
+                                if data == val {
                                     success += 1;
                                     tx_success
                                         .send(success)
@@ -102,6 +133,16 @@ async fn main() -> anyhow::Result<()> {
                                     fail.match_fail += 1;
                                     tx_fail.send(fail).expect("发送失败次数失败，考虑外部干预");
                                 }
+                                // if data[0] == val[0] {
+                                //     // 模糊匹配，我简单认为没必要每个字节都一样
+                                //     success += 1;
+                                //     tx_success
+                                //         .send(success)
+                                //         .expect("发送成功次数失败，考虑外部干预");
+                                // } else {
+                                //     fail.match_fail += 1;
+                                //     tx_fail.send(fail).expect("发送失败次数失败，考虑外部干预");
+                                // }
                             }
                         } else {
                             fail.align_fail += 1;
