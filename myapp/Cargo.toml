@@ -16,6 +16,8 @@ tokio = { workspace = true, features = ["full"] }
 
 clap = { workspace = true, features = ["derive"] }
 
+mio = { version = "1", features = ["os-poll"]}
+
 [build-dependencies]
 anyhow = { workspace = true }
 aya-build = { workspace = true }

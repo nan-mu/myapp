@@ -11,6 +11,8 @@ use tokio::{
     // signal::unix::{signal, SignalKind},
     time::{sleep, Duration},
 };
+
+mod fd_handle;
 #[derive(Debug, Parser)]
 struct Opt {
     #[clap(short, long, default_value = "lo")]
@@ -185,7 +187,7 @@ async fn main() -> anyhow::Result<()> {
                 .send(())
                 .expect("发送关闭信号失败，考虑子线程出错或外部干预，考虑sudo kill主线程");
         }
-        _ = sleep(Duration::from_secs(10)) => {
+        _ = sleep(Duration::from_secs(100)) => {
             println!("\n超时退出...");
             shutdown
                 .send(())

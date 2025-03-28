@@ -67,7 +67,7 @@ destination_ip = '127.0.0.1'
 try:
     while True:
         s.sendto(packet, (destination_ip, 0))
-        time.sleep(0.01)  # 100Hz发送频率
+        time.sleep(0.001)  # 100Hz发送频率
 except KeyboardInterrupt:
     print("发送停止")
 finally:
