@@ -1,25 +1,25 @@
 # myapp
 
-An eBPF-based communication middleware validation demo.
+基于ebpf的通信中间件验证demo。
 
-I should come up with a good name later.
+之后应该会想一个好名字。
 
-## Known
+## 已知
 
-A significant performance gap has been observed between the Raspberry Pi environment (native Linux kernel environment) and WSL (escaped kernel environment). Using 4KB and 1000Hz as strict conditions, the success rate on the Raspberry Pi was 90.158% and 85.972%.
+观察到树莓派环境（原始linux内核环境）和wsl（转义内核环境）存在较大性能差距。使用4KB，1000Hz作为严格条件，树莓派成功率为90.158%，85.972%。
 
-I strongly recommend avoiding running it on WSL. I don't know what other issues my computer might have, but 85.972% was the data collected shortly after booting. Sometimes, under the same conditions, I get around 60%. Additionally, more buffer overflows were observed under WSL.
+我强烈建议避免在wsl运行。我不知道我的电脑除了什么问题但85.972%是在开机后一小段时间得到的数据。有时该条件下我能得到60%左右。且在wsl下观察到更多次缓存区溢出。
 
 ## TODO
 
-- [ ] Use YAML instead of command-line arguments as startup parameters
-- [ ] Rewrite the Python raw IPv4 script using Rust
+- [ ] 使用yaml而不是命令行参数作为启动参数
+- [ ] 使用rust重写python的raw ipv4脚本
 
-## Synchronize Code
+## 同步代码
 
 ```shell
 while inotifywait -r -e modify,create,delete,move ./; do
-    rsync -av --delete --exclude-from='.gitignore' --exclude='.git/' ./ labpi:myapp/ # For single synchronization, just run this
+    rsync -av --delete --exclude-from='.gitignore' --exclude='.git/' ./ labpi:myapp/ # 单次同步直接运行这个也行
 done
 ```
 
@@ -37,7 +37,7 @@ done
 Use `cargo build`, `cargo check`, etc. as normal. Run your program with:
 
 ```shell
-cargo run --release --config 'target."cfg(all())".runner="sudo -E"'
+cargo run --release --config 'target."cfg(all())".runner="sudo -E"' # 建议添加为别名
 ```
 
 Cargo build scripts are used to automatically build the eBPF correctly and include it in the
