@@ -1,18 +1,20 @@
 #![no_std]
 #![no_main]
 
+use core::net::Ipv4Addr;
+
 use aya_ebpf::{
     bindings::xdp_action,
     macros::{map, xdp},
     maps::RingBuf,
     programs::XdpContext,
 };
-// use aya_log_ebpf::info;
 
 use aya_log_ebpf::error;
 use network_types::{
     eth::{EthHdr, EtherType},
     ip::Ipv4Hdr,
+    tcp::TcpHdr,
 };
 
 #[xdp]
@@ -24,8 +26,15 @@ pub fn myapp(ctx: XdpContext) -> u32 {
 }
 
 // 计划传输几个u64大小
-const U64_COUNT: usize = 4093;
+const U64_COUNT: usize = 150;
 const DATA_SIZE: usize = U64_COUNT * 8;
+const _: [(); 1] = [(); (DATA_SIZE <= 1212) as usize]; // 保守负载大小
+const DSTIP: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 96); // logger ip
+
+// 临时校验和，源字段为
+// 00000000  45 68 7f fc 06 c1 00 00 40 fd 00 00 c0 a8 01 5d   |Eh......@......]|
+// 00000010  c0 a8 01 5d                                       |...]|
+const CHECK: u16 = 0x4D4F;
 
 #[map(name = "TARGET_MAP")]
 static mut TARGET_MAP: RingBuf = RingBuf::with_byte_size((DATA_SIZE) as u32, 0);
@@ -34,7 +43,7 @@ fn try_myapp(ctx: XdpContext) -> Result<u32, ()> {
     // 理论上，该程序只会关注特定的数据包，所以将优先判断最小概率条件
     // 最小条件下，数据包包含完整ip头部并且ip头部的服务字段为44（CS5关键业务）
     // DATA_SIZE为传感器传输的数据大小，两个u64。
-    if ctx.data() + EthHdr::LEN + Ipv4Hdr::LEN + DATA_SIZE > ctx.data_end() {
+    if ctx.data() + EthHdr::LEN + Ipv4Hdr::LEN + TcpHdr::LEN + DATA_SIZE > ctx.data_end() {
         return Ok(xdp_action::XDP_PASS);
     }
 
@@ -60,22 +69,36 @@ fn try_myapp(ctx: XdpContext) -> Result<u32, ()> {
         _ => return Ok(xdp_action::XDP_PASS),
     }
 
-    unsafe {
-        #[allow(static_mut_refs)]
-        let reserved = TARGET_MAP.reserve::<[u64; U64_COUNT]>(0);
-        match reserved {
-            Some(mut entry) => {
-                // 拷贝DATA_SIZE字节数据到ring_buf
-                if let Ok(data) = ptr_at(&ctx, EthHdr::LEN + Ipv4Hdr::LEN){
-                    entry.write(*data);
-                };
-                entry.submit(0);
+    // 只处理携带负载的tcp
+    let tcphdr: *const TcpHdr = ptr_at(&ctx, EthHdr::LEN + Ipv4Hdr::LEN)?;
+    if unsafe { (*tcphdr).psh() } == 1 {
+        unsafe {
+            #[allow(static_mut_refs)]
+            let reserved = TARGET_MAP.reserve::<[u64; U64_COUNT]>(0);
+            match reserved {
+                Some(mut entry) => {
+                    // 拷贝DATA_SIZE字节数据到ring_buf
+                    if let Ok(data) = ptr_at(&ctx, EthHdr::LEN + Ipv4Hdr::LEN) {
+                        entry.write(*data);
+                    };
+                    entry.submit(0);
+                }
+                None => error!(&ctx, "ring_buf full"),
             }
-            None => error!(&ctx, "ring_buf full"),
         }
     }
 
-    Ok(xdp_action::XDP_DROP)
+    // 修改数据包发送字段，传输到日志器
+    unsafe {
+        core::mem::swap(
+            &mut (*(ethhdr as *mut EthHdr)).dst_addr,
+            &mut (*(ethhdr as *mut EthHdr)).src_addr,
+        );
+        (*(ipv4hdr as *mut Ipv4Hdr)).set_dst_addr(DSTIP);
+        (*(ipv4hdr as *mut Ipv4Hdr)).check = CHECK;
+    };
+
+    Ok(xdp_action::XDP_TX)
 }
 
 #[inline(always)]

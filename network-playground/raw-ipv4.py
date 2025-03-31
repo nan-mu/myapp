@@ -40,8 +40,8 @@ ip_header = struct.pack(
     64,  # 生存时间
     253,  # 用于实验和测试的协议编号
     0,  # 校验和，稍后填充
-    socket.inet_aton('127.0.0.1'), # 源IP
-    socket.inet_aton('127.0.0.1')  # 目标IP
+    socket.inet_aton('192.168.1.93'), # 源IP
+    socket.inet_aton('192.168.1.93')  # 目标IP
 )
 
 # 计算IP头部的校验和
@@ -53,6 +53,9 @@ def checksum(data):
     s += s >> 16
     return ~s & 0xFFFF
 
+print("IP header in hex:")
+print(hexdump(ip_header))
+print("checksum: ", checksum(ip_header))
 # 计算最终IP头部（仅需一次）
 final_ip_header = ip_header[:10] + struct.pack('!H', checksum(ip_header)) + ip_header[12:]
 
@@ -62,13 +65,13 @@ s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_RAW)
 # 预组合完整数据包
 packet = final_ip_header + data
 
-# 发送循环
-destination_ip = '127.0.0.1'
-try:
-    while True:
-        s.sendto(packet, (destination_ip, 0))
-        time.sleep(0.001)  # 100Hz发送频率
-except KeyboardInterrupt:
-    print("发送停止")
-finally:
-    s.close()
+# # 发送循环
+# destination_ip = '127.0.0.1'
+# try:
+#     while True:
+#         s.sendto(packet, (destination_ip, 0))
+#         time.sleep(0.001)  # 100Hz发送频率
+# except KeyboardInterrupt:
+#     print("发送停止")
+# finally:
+#     s.close()
