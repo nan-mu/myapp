@@ -4,10 +4,7 @@
 use core::net::Ipv4Addr;
 
 use aya_ebpf::{
-    bindings::xdp_action,
-    macros::{map, xdp},
-    maps::RingBuf,
-    programs::XdpContext,
+    bindings::xdp_action, helpers::gen::bpf_csum_diff, macros::{map, xdp}, maps::RingBuf, programs::XdpContext
 };
 
 use aya_log_ebpf::error;
@@ -34,7 +31,7 @@ const DSTIP: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 96); // logger ip
 // 临时校验和，源字段为
 // 00000000  45 68 7f fc 06 c1 00 00 40 fd 00 00 c0 a8 01 5d   |Eh......@......]|
 // 00000010  c0 a8 01 5d                                       |...]|
-const CHECK: u16 = 0x4D4F;
+// const CHECK: u16 = 0x4D4F;
 
 #[map(name = "TARGET_MAP")]
 static mut TARGET_MAP: RingBuf = RingBuf::with_byte_size((DATA_SIZE) as u32, 0);
@@ -69,6 +66,8 @@ fn try_myapp(ctx: XdpContext) -> Result<u32, ()> {
         _ => return Ok(xdp_action::XDP_PASS),
     }
 
+    // 以下确定是目的数据包
+
     // 只处理携带负载的tcp
     let tcphdr: *const TcpHdr = ptr_at(&ctx, EthHdr::LEN + Ipv4Hdr::LEN)?;
     if unsafe { (*tcphdr).psh() } == 1 {
@@ -94,8 +93,22 @@ fn try_myapp(ctx: XdpContext) -> Result<u32, ()> {
             &mut (*(ethhdr as *mut EthHdr)).dst_addr,
             &mut (*(ethhdr as *mut EthHdr)).src_addr,
         );
+        // (*(ipv4hdr as *mut Ipv4Hdr)).set_dst_addr(DSTIP);
+        // (*(ipv4hdr as *mut Ipv4Hdr)).check = CHECK;
+
+        //TODO: 我觉得ipv4校验和应该不用每次计算，tcp需要想些办法。但说不定用diff会比较快
+
+        // 计算ipv4校验和
+        let mut old_addr = (*ipv4hdr).dst_addr;
+        let mut new_addr = DSTIP.to_bits();
+        let ipv4_csum = bpf_csum_diff(&mut old_addr as *mut u32, 4, &mut new_addr as *mut u32, 4, 0);
+
+        // 计算tcp校验和
+        let tcp_csum = bpf_csum_diff(&mut old_addr as *mut u32, 4, &mut new_addr as *mut u32, 4, (*tcphdr).check as u32);
+
         (*(ipv4hdr as *mut Ipv4Hdr)).set_dst_addr(DSTIP);
-        (*(ipv4hdr as *mut Ipv4Hdr)).check = CHECK;
+        (*(ipv4hdr as *mut Ipv4Hdr)).check = ipv4_csum as u16;
+        (*(tcphdr as *mut TcpHdr)).check = tcp_csum as u16;
     };
 
     Ok(xdp_action::XDP_TX)
