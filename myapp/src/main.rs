@@ -15,7 +15,7 @@ use tokio::{
 mod fd_handle;
 #[derive(Debug, Parser)]
 struct Opt {
-    #[clap(short, long, default_value = "lo")]
+    #[clap(short, long, default_value = "wlan0")]
     iface: String,
 }
 
@@ -187,7 +187,7 @@ async fn main() -> anyhow::Result<()> {
                 .send(())
                 .expect("发送关闭信号失败，考虑子线程出错或外部干预，考虑sudo kill主线程");
         }
-        _ = sleep(Duration::from_secs(100)) => {
+        _ = sleep(Duration::from_secs(1000)) => {
             println!("\n超时退出...");
             shutdown
                 .send(())
