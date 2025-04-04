@@ -12,14 +12,14 @@ use tokio::{
     time::{sleep, Duration},
 };
 
-mod fd_handle;
+// mod fd_handle;
 #[derive(Debug, Parser)]
 struct Opt {
     #[clap(short, long, default_value = "wlan0")]
     iface: String,
 }
 
-const U64_COUNT: usize = 4093;
+const U64_COUNT: usize = 150;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

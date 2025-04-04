@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["myapp", "myapp-common", "myapp-ebpf", "logger-ebpf"]
+members = ["myapp", "myapp-common", "myapp-ebpf"]
 default-members = ["myapp", "myapp-common"]
 
 [workspace.dependencies]

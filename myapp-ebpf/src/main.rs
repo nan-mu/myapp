@@ -4,15 +4,16 @@
 use core::net::Ipv4Addr;
 
 use aya_ebpf::{
-    bindings::xdp_action, helpers::gen::bpf_csum_diff, macros::{map, xdp}, maps::RingBuf, programs::XdpContext
+    bindings::xdp_action,
+    macros::{map, xdp},
+    maps::RingBuf,
+    programs::XdpContext,
 };
 
-use aya_log_ebpf::error;
-use network_types::{
-    eth::{EthHdr, EtherType},
-    ip::Ipv4Hdr,
-    tcp::TcpHdr,
-};
+use aya_log_ebpf::{debug, error, info};
+use network_types::{eth::EthHdr, ip::Ipv4Hdr, tcp::TcpHdr};
+
+// mod csum;
 
 #[xdp]
 pub fn myapp(ctx: XdpContext) -> u32 {
@@ -26,30 +27,12 @@ pub fn myapp(ctx: XdpContext) -> u32 {
 const U64_COUNT: usize = 150;
 const DATA_SIZE: usize = U64_COUNT * 8;
 const _: [(); 1] = [(); (DATA_SIZE <= 1212) as usize]; // 保守负载大小
-const DSTIP: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 96); // logger ip
-
-// 临时校验和，源字段为
-// 00000000  45 68 7f fc 06 c1 00 00 40 fd 00 00 c0 a8 01 5d   |Eh......@......]|
-// 00000010  c0 a8 01 5d                                       |...]|
-// const CHECK: u16 = 0x4D4F;
+const DSTIP: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 79); // logger ip
 
 #[map(name = "TARGET_MAP")]
 static mut TARGET_MAP: RingBuf = RingBuf::with_byte_size((DATA_SIZE) as u32, 0);
 
 fn try_myapp(ctx: XdpContext) -> Result<u32, ()> {
-    // 理论上，该程序只会关注特定的数据包，所以将优先判断最小概率条件
-    // 最小条件下，数据包包含完整ip头部并且ip头部的服务字段为44（CS5关键业务）
-    // DATA_SIZE为传感器传输的数据大小，两个u64。
-    if ctx.data() + EthHdr::LEN + Ipv4Hdr::LEN + TcpHdr::LEN + DATA_SIZE > ctx.data_end() {
-        return Ok(xdp_action::XDP_PASS);
-    }
-
-    let ethhdr: *const EthHdr = ptr_at(&ctx, 0)?;
-    match unsafe { (*ethhdr).ether_type } {
-        EtherType::Ipv4 => {}
-        _ => return Ok(xdp_action::XDP_PASS),
-    }
-
     const TARGET_TOS: u8 = 0b01101000;
 
     // 编译时断言
@@ -67,9 +50,20 @@ fn try_myapp(ctx: XdpContext) -> Result<u32, ()> {
     }
 
     // 以下确定是目的数据包
+    info!(&ctx, "get");
 
     // 只处理携带负载的tcp
     let tcphdr: *const TcpHdr = ptr_at(&ctx, EthHdr::LEN + Ipv4Hdr::LEN)?;
+    debug!(
+        &ctx,
+        "TCP flags: FIN={}, SYN={}, RST={}, PSH={}, ACK={}, URG={}",
+        unsafe { (*tcphdr).fin() },
+        unsafe { (*tcphdr).syn() },
+        unsafe { (*tcphdr).rst() },
+        unsafe { (*tcphdr).psh() },
+        unsafe { (*tcphdr).ack() },
+        unsafe { (*tcphdr).urg() }
+    );
     if unsafe { (*tcphdr).psh() } == 1 {
         unsafe {
             #[allow(static_mut_refs)]
@@ -89,27 +83,39 @@ fn try_myapp(ctx: XdpContext) -> Result<u32, ()> {
 
     // 修改数据包发送字段，传输到日志器
     unsafe {
-        core::mem::swap(
-            &mut (*(ethhdr as *mut EthHdr)).dst_addr,
-            &mut (*(ethhdr as *mut EthHdr)).src_addr,
-        );
-        // (*(ipv4hdr as *mut Ipv4Hdr)).set_dst_addr(DSTIP);
-        // (*(ipv4hdr as *mut Ipv4Hdr)).check = CHECK;
+        let ethhdr: *const EthHdr = ptr_at(&ctx, 0)?;
+        info!(&ctx, "ethhdr src_addr: 0x{:x}", (*ethhdr).src_addr[5]);
+        info!(&ctx, "ethhdr dst_addr: 0x{:x}", (*ethhdr).dst_addr[5]);
+        // [0x54, 0x6c, 0xeb, 0x72, 0xbd, 0x84] for pc 96
+        // [0x2c, 0xcf, 0x67, 0x3e, 0x3b, 0x03] for logger test2 79
+        // [0x2c, 0xcf, 0x67, 0x3e, 0x3b, 0x02] for test1 93
+        (*(ethhdr as *mut EthHdr)).src_addr = [0x2c, 0xcf, 0x67, 0x3e, 0x3b, 0x02];
+        (*(ethhdr as *mut EthHdr)).dst_addr = [0x2c, 0xcf, 0x67, 0x3e, 0x3b, 0x03];
 
-        //TODO: 我觉得ipv4校验和应该不用每次计算，tcp需要想些办法。但说不定用diff会比较快
+        info!(&ctx, "ethhdr src_addr: 0x{:x}", (*ethhdr).src_addr[5]);
+        info!(&ctx, "ethhdr dst_addr: 0x{:x}", (*ethhdr).dst_addr[5]);
 
-        // 计算ipv4校验和
-        let mut old_addr = (*ipv4hdr).dst_addr;
-        let mut new_addr = DSTIP.to_bits();
-        let ipv4_csum = bpf_csum_diff(&mut old_addr as *mut u32, 4, &mut new_addr as *mut u32, 4, 0);
+        let ip_csum = (*ipv4hdr).check.swap_bytes();
+        let tcp_csum = (*tcphdr).check.swap_bytes();
+        debug!(&ctx, "old ip csum: 0x{:x}", ip_csum);
+        debug!(&ctx, "old tcp csum: 0x{:x}", tcp_csum);
 
-        // 计算tcp校验和
-        let tcp_csum = bpf_csum_diff(&mut old_addr as *mut u32, 4, &mut new_addr as *mut u32, 4, (*tcphdr).check as u32);
+        let old_ip = (*ipv4hdr).dst_addr.swap_bytes() as u16;
+        const NEW_IP: u16 = u16::from_be_bytes([DSTIP.octets()[2], DSTIP.octets()[3]]);
+        debug!(&ctx, "old ip: 0x{:x}", old_ip);
+        debug!(&ctx, "new ip: 0x{:x}", NEW_IP);
+        // debug!(&ctx, "src ip: 0x{:x}", (*ipv4hdr).src_addr().to_bits());
+
+        let new_ip_csum = update_checksum(ip_csum, old_ip, NEW_IP);
+        let new_tcp_csum = update_checksum(tcp_csum, old_ip, NEW_IP);
+
+        debug!(&ctx, "new ip csum: 0x{:x}", new_ip_csum);
+        debug!(&ctx, "new tcp csum: 0x{:x}", new_tcp_csum);
 
         (*(ipv4hdr as *mut Ipv4Hdr)).set_dst_addr(DSTIP);
-        (*(ipv4hdr as *mut Ipv4Hdr)).check = ipv4_csum as u16;
-        (*(tcphdr as *mut TcpHdr)).check = tcp_csum as u16;
-    };
+        (*(ipv4hdr as *mut Ipv4Hdr)).check = new_ip_csum.swap_bytes();
+        (*(tcphdr as *mut TcpHdr)).check = new_tcp_csum.swap_bytes();
+    }
 
     Ok(xdp_action::XDP_TX)
 }
@@ -125,6 +131,28 @@ fn ptr_at<T>(ctx: &XdpContext, offset: usize) -> Result<*const T, ()> {
     }
 
     Ok((start + offset) as *const T)
+}
+
+/// 通过差异增量计算新的IP校验和
+/// 注意所有字段应当按照小端（be）顺序存储
+/// # 参数
+/// * `old_csum` - 原始校验和
+/// * `old` - 被修改的16位值
+/// * `new` - 新的16位值
+///
+/// # 返回值
+/// 更新后的校验和
+#[inline(always)]
+fn update_checksum(old_csum: u16, old: u16, new: u16) -> u16 {
+    // 计算增量: 从旧校验和中减去旧值，加上新值
+    let mut csum = !old_csum as u32; // 校验和取反得到和
+    csum = csum.wrapping_sub(old as u32).wrapping_add(new as u32); // 更新和
+
+    // 处理进位
+    let csum = (csum >> 16) + (csum & 0xFFFF);
+    let csum = csum + (csum >> 16);
+
+    (!csum as u16) & 0xFFFF // 再次取反得到新校验和
 }
 
 #[cfg(not(test))]
