@@ -13,6 +13,9 @@ network-types = "0.0.7"
 
 [build-dependencies]
 which = { workspace = true }
+const-gen = { workspace = true, features = ["std", "derive", "net"]}
+toml = { workspace = true , features = ["parse"] }
+serde = { workspace = true, features = ["derive"] }
 
 [[bin]]
 name = "sensor"

@@ -3,8 +3,6 @@
 
 include!(concat!(env!("OUT_DIR"), "/const_gen.rs"));
 
-use core::net::Ipv4Addr;
-
 use aya_ebpf::{
     bindings::xdp_action,
     macros::{map, xdp},
@@ -112,7 +110,11 @@ fn try_hardworker(ctx: XdpContext) -> Result<u32, ()> {
         (*(tcphdr as *mut TcpHdr)).check = tcp_csum.swap_bytes();
     }
 
-    debug!(&ctx, "pack reach XDP_TX with TCP checksum: 0x{:x}", unsafe { (*tcphdr).check.swap_bytes() });
+    debug!(
+        &ctx,
+        "pack reach XDP_TX with TCP checksum: 0x{:x}",
+        unsafe { (*tcphdr).check.swap_bytes() }
+    );
     Ok(xdp_action::XDP_TX)
 }
 

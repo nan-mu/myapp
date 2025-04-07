@@ -3,12 +3,7 @@
 
 include!(concat!(env!("OUT_DIR"), "/const_gen.rs"));
 
-
-use aya_ebpf::{
-    bindings::xdp_action,
-    macros::xdp,
-    programs::XdpContext,
-};
+use aya_ebpf::{bindings::xdp_action, macros::xdp, programs::XdpContext};
 
 use aya_log_ebpf::debug;
 use network_types::{eth::EthHdr, ip::Ipv4Hdr, tcp::TcpHdr};
@@ -43,18 +38,20 @@ fn try_logger(ctx: XdpContext) -> Result<u32, ()> {
         return Ok(xdp_action::XDP_PASS);
     }
 
-    debug!(
-        &ctx,
-        "get TCP pack with checksum {}",
-        unsafe { (*tcphdr).check }
-    );
+    debug!(&ctx, "get TCP pack with checksum {}", unsafe {
+        (*tcphdr).check
+    });
 
     let ethhdr: *const EthHdr = ptr_at(&ctx, 0)?;
     unsafe {
         (*(ethhdr as *mut EthHdr)).src_addr = MAC.sensor;
     }
 
-    debug!(&ctx, "pack reach XDP_PASS with TCP checksum 0x{:x}", unsafe { (*tcphdr).check });
+    debug!(
+        &ctx,
+        "pack reach XDP_PASS with TCP checksum 0x{:x}",
+        unsafe { (*tcphdr).check }
+    );
     Ok(xdp_action::XDP_PASS)
 }
 
