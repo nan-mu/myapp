@@ -112,7 +112,7 @@ fn try_hardworker(ctx: XdpContext) -> Result<u32, ()> {
         (*(tcphdr as *mut TcpHdr)).check = tcp_csum.swap_bytes();
     }
 
-    debug!(&ctx, "pack reach XDP_TX. TCP checksum: 0x{:x}", unsafe { (*tcphdr).check.swap_bytes() });
+    debug!(&ctx, "pack reach XDP_TX with TCP checksum: 0x{:x}", unsafe { (*tcphdr).check.swap_bytes() });
     Ok(xdp_action::XDP_TX)
 }
 

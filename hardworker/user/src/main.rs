@@ -1,3 +1,5 @@
+include!(concat!(env!("OUT_DIR"), "/const_gen.rs"));
+
 use anyhow::Context as _;
 use aya::{
     maps::RingBuf,
@@ -8,7 +10,6 @@ use clap::Parser;
 use log::{debug, warn};
 use tokio::{
     io::unix::AsyncFd,
-    // signal::unix::{signal, SignalKind},
     time::{sleep, Duration},
 };
 
@@ -19,7 +20,6 @@ struct Opt {
     iface: String,
 }
 
-const U64_COUNT: usize = 150;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -79,14 +79,14 @@ async fn main() -> anyhow::Result<()> {
         let mut handle = async move || {
             let mut success = 0 as u64;
             let mut fail = FaillType::default();
-            let mut data = [0u64; U64_COUNT];
+            let mut data = [0u64; DATA.load_u64_count];
             loop {
                 while let Ok(mut guard) = poll.readable_mut().await {
                     if let Some(new_data) = guard.get_inner_mut().next() {
-                        if new_data.len() == std::mem::size_of::<[u64; U64_COUNT]>() {
+                        if new_data.len() == std::mem::size_of::<[u64; DATA.load_u64_count]>() {
                             let val = unsafe {
                                 std::ptr::read_unaligned(
-                                    new_data.as_ptr() as *const [u64; U64_COUNT]
+                                    new_data.as_ptr() as *const [u64; DATA.load_u64_count]
                                 )
                             };
                             drop(new_data);
