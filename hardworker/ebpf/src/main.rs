@@ -95,7 +95,7 @@ fn try_hardworker(ctx: XdpContext) -> Result<u32, ()> {
     // 修改数据包发送字段，传输到日志器
     unsafe {
         let ethhdr: *const EthHdr = ptr_at(&ctx, 0)?;
-        (*(ethhdr as *mut EthHdr)).src_addr = MAC.hardware;
+        (*(ethhdr as *mut EthHdr)).src_addr = MAC.hardworker;
         (*(ethhdr as *mut EthHdr)).dst_addr = MAC.logger;
 
         let ip_csum = (*ipv4hdr).check.swap_bytes();

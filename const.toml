@@ -1,11 +1,11 @@
 [mac]
 logger = "2c:cf:67:3e:3a:02"
-hardware = "2c:cf:67:3e:3b:03"
+hardworker = "2c:cf:67:3e:3b:03"
 sensor = "54:6c:eb:72:bd:84"
 
 [ip]
 logger = "192.168.1.93"
-hardware = "192.168.1.79"
+hardworker = "192.168.1.79"
 sensor = "192.168.1.96"
 
 [mark]

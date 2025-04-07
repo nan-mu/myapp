@@ -67,30 +67,30 @@ struct Consts {
 #[derive(Deserialize)]
 struct MacToml {
     logger: String,
-    hardware: String,
+    hardworker: String,
     sensor: String,
 }
 
 impl From<MacToml> for Mac {
     fn from(mac: MacToml) -> Self {
         let logger = mac.logger.split(':').map(|s| u8::from_str_radix(s, 16).unwrap()).collect::<Vec<_>>().try_into().unwrap();
-        let hardware = mac.hardware.split(':').map(|s| u8::from_str_radix(s, 16).unwrap()).collect::<Vec<_>>().try_into().unwrap();
+        let hardworker = mac.hardworker.split(':').map(|s| u8::from_str_radix(s, 16).unwrap()).collect::<Vec<_>>().try_into().unwrap();
         let sensor = mac.sensor.split(':').map(|s| u8::from_str_radix(s, 16).unwrap()).collect::<Vec<_>>().try_into().unwrap();
-        Self { logger, hardware, sensor }
+        Self { logger, hardworker, sensor }
     }
 }
 
 #[derive(CompileConst)]
 struct Mac {
     logger: [u8; 6],
-    hardware: [u8; 6],
+    hardworker: [u8; 6],
     sensor: [u8; 6],
 }
 
 #[derive(CompileConst, Deserialize)]
 struct Ip {
     logger: Ipv4Addr,
-    hardware: Ipv4Addr,
+    hardworker: Ipv4Addr,
     sensor: Ipv4Addr,
 }
 
