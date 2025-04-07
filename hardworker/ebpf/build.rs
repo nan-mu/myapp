@@ -31,6 +31,7 @@ fn main() {
     let mac = Mac::from(consts.mac);
     let ip = consts.ip;
     let data = consts.data;
+    let mark = consts.mark;
 
     let const_declarations = vec![
         "#[allow(unused)]".to_string(),
@@ -39,6 +40,8 @@ fn main() {
         const_definition!(Ip),
         "#[allow(unused)]".to_string(),
         const_definition!(Data),
+        "#[allow(unused)]".to_string(),
+        const_definition!(Mark),
 
         "#[allow(unused)]".to_string(),
         const_declaration!(MAC = mac),
@@ -46,6 +49,8 @@ fn main() {
         const_declaration!(IP = ip),
         "#[allow(unused)]".to_string(),
         const_declaration!(DATA = data),
+        "#[allow(unused)]".to_string(),
+        const_declaration!(MARK = mark),
     ].join("\n");
 
     fs::write(&dest_path, const_declarations).unwrap();
@@ -56,6 +61,7 @@ struct Consts {
     mac: MacToml,
     ip: Ip,
     data: Data,
+    mark: Mark,
 }
 
 #[derive(Deserialize)]
@@ -86,11 +92,16 @@ struct Ip {
     logger: Ipv4Addr,
     hardware: Ipv4Addr,
     sensor: Ipv4Addr,
-    tos: u8,
 }
 
 #[derive(CompileConst, Deserialize)]
 struct Data {
     mtu: usize,
     load_u64_count: usize,
+}
+
+#[derive(CompileConst, Deserialize)]
+struct Mark {
+    tos: u8,
+    port: u16,
 }

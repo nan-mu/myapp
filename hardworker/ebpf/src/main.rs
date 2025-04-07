@@ -12,7 +12,7 @@ use aya_ebpf::{
     programs::XdpContext,
 };
 
-use aya_log_ebpf::{debug, error, info};
+use aya_log_ebpf::{debug, error};
 use network_types::{eth::EthHdr, ip::Ipv4Hdr, tcp::TcpHdr};
 
 // mod csum;
@@ -33,7 +33,7 @@ const _: [(); 1] = [(); ((DATA_SIZE + Ipv4Hdr::LEN + TcpHdr::LEN) <= DATA.mtu) a
 static mut TARGET_MAP: RingBuf = RingBuf::with_byte_size((DATA_SIZE) as u32, 0);
 
 fn try_hardworker(ctx: XdpContext) -> Result<u32, ()> {
-    const TARGET_TOS: u8 = IP.tos;
+    const TARGET_TOS: u8 = MARK.tos;
 
     // 编译时断言
     // 确保TOS字段的最后一位为0符合TOS字段要求
@@ -49,8 +49,12 @@ fn try_hardworker(ctx: XdpContext) -> Result<u32, ()> {
         _ => return Ok(xdp_action::XDP_PASS),
     }
 
-    // 只处理携带负载的tcp
+    // 我发现光一个tos还是不够，加一个tcp端口号
     let tcphdr: *const TcpHdr = ptr_at(&ctx, EthHdr::LEN + Ipv4Hdr::LEN)?;
+    if unsafe { (*tcphdr).dest } == MARK.port {
+        return Ok(xdp_action::XDP_PASS);
+    }
+
     debug!(
         &ctx,
         "get TCP {} pack",

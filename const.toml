@@ -7,7 +7,10 @@ sensor = "54:6c:eb:72:bd:84"
 logger = "192.168.1.93"
 hardware = "192.168.1.79"
 sensor = "192.168.1.96"
-tos = 0x68
+
+[mark]
+tos = 108
+port = 12345
 
 [data]
 mtu = 1200
