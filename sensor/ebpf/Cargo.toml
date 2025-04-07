@@ -15,5 +15,5 @@ network-types = "0.0.7"
 which = { workspace = true }
 
 [[bin]]
-name = "hardworker"
+name = "sensor"
 path = "src/main.rs"

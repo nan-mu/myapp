@@ -16,8 +16,8 @@ use network_types::{eth::EthHdr, ip::Ipv4Hdr, tcp::TcpHdr};
 // mod csum;
 
 #[xdp]
-pub fn hardworker(ctx: XdpContext) -> u32 {
-    match try_hardworker(ctx) {
+pub fn sensor(ctx: XdpContext) -> u32 {
+    match try_sensor(ctx) {
         Ok(ret) => ret,
         Err(_) => xdp_action::XDP_ABORTED,
     }
@@ -32,7 +32,7 @@ const DSTIP: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 93); // logger ip
 #[map(name = "TARGET_MAP")]
 static mut TARGET_MAP: RingBuf = RingBuf::with_byte_size((DATA_SIZE) as u32, 0);
 
-fn try_hardworker(ctx: XdpContext) -> Result<u32, ()> {
+fn try_sensor(ctx: XdpContext) -> Result<u32, ()> {
     const TARGET_TOS: u8 = 0b01101000;
 
     // 编译时断言

@@ -40,13 +40,13 @@ async fn main() -> anyhow::Result<()> {
 
     let mut ebpf = aya::Ebpf::load(aya::include_bytes_aligned!(concat!(
         env!("OUT_DIR"),
-        "/hardworker"
+        "/sensor"
     )))?;
     if let Err(e) = aya_log::EbpfLogger::init(&mut ebpf) {
         warn!("初始化ebpf日志器失败: {}", e);
     }
     let Opt { iface } = opt;
-    let program: &mut Xdp = ebpf.program_mut("hardworker").unwrap().try_into()?;
+    let program: &mut Xdp = ebpf.program_mut("sensor").unwrap().try_into()?;
     program.load()?;
     program
         .attach(&iface, XdpFlags::default())
