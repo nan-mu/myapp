@@ -1,19 +1,17 @@
 #![no_std]
 #![no_main]
 
-use core::net::Ipv4Addr;
+include!(concat!(env!("OUT_DIR"), "/const_gen.rs"));
+
 
 use aya_ebpf::{
     bindings::xdp_action,
-    macros::{map, xdp},
-    maps::RingBuf,
+    macros::xdp,
     programs::XdpContext,
 };
 
-use aya_log_ebpf::{debug, error, info};
+use aya_log_ebpf::debug;
 use network_types::{eth::EthHdr, ip::Ipv4Hdr, tcp::TcpHdr};
-
-// mod csum;
 
 #[xdp]
 pub fn logger(ctx: XdpContext) -> u32 {
@@ -24,7 +22,7 @@ pub fn logger(ctx: XdpContext) -> u32 {
 }
 
 fn try_logger(ctx: XdpContext) -> Result<u32, ()> {
-    const TARGET_TOS: u8 = 0b01101000;
+    const TARGET_TOS: u8 = MARK.tos;
 
     // 编译时断言
     // 确保TOS字段的最后一位为0符合TOS字段要求
@@ -39,7 +37,25 @@ fn try_logger(ctx: XdpContext) -> Result<u32, ()> {
         TARGET_TOS => {}
         _ => return Ok(xdp_action::XDP_PASS),
     }
-    Ok(xdp_action::XDP_TX)
+
+    let tcphdr: *const TcpHdr = ptr_at(&ctx, EthHdr::LEN + Ipv4Hdr::LEN)?;
+    if unsafe { (*tcphdr).dest } == MARK.port {
+        return Ok(xdp_action::XDP_PASS);
+    }
+
+    debug!(
+        &ctx,
+        "get TCP pack with checksum {}",
+        unsafe { (*tcphdr).check }
+    );
+
+    let ethhdr: *const EthHdr = ptr_at(&ctx, 0)?;
+    unsafe {
+        (*(ethhdr as *mut EthHdr)).src_addr = MAC.sensor;
+    }
+
+    debug!(&ctx, "pack reach XDP_PASS with TCP checksum 0x{:x}", unsafe { (*tcphdr).check });
+    Ok(xdp_action::XDP_PASS)
 }
 
 #[inline(always)]
@@ -53,28 +69,6 @@ fn ptr_at<T>(ctx: &XdpContext, offset: usize) -> Result<*const T, ()> {
     }
 
     Ok((start + offset) as *const T)
-}
-
-/// 通过差异增量计算新的IP校验和
-/// 注意所有字段应当按照小端（be）顺序存储
-/// # 参数
-/// * `old_csum` - 原始校验和
-/// * `old` - 被修改的16位值
-/// * `new` - 新的16位值
-///
-/// # 返回值
-/// 更新后的校验和
-#[inline(always)]
-fn update_checksum(old_csum: u16, old: u16, new: u16) -> u16 {
-    // 计算增量: 从旧校验和中减去旧值，加上新值
-    let mut csum = !old_csum as u32; // 校验和取反得到和
-    csum = csum.wrapping_sub(old as u32).wrapping_add(new as u32); // 更新和
-
-    // 处理进位
-    let csum = (csum >> 16) + (csum & 0xFFFF);
-    let csum = csum + (csum >> 16);
-
-    (!csum as u16) & 0xFFFF // 再次取反得到新校验和
 }
 
 #[cfg(not(test))]
