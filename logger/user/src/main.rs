@@ -43,9 +43,6 @@ async fn main() -> anyhow::Result<()> {
         .attach(&iface, XdpFlags::default())
         .context("默认flag连接xdp失败，考虑特定flag")?;
 
-    let (shutdown, _) = tokio::sync::oneshot::channel();
-
-
     println!("主进程PID: {}", std::process::id());
     println!("主线程TID: {}", unsafe {
         libc::syscall(libc::SYS_gettid)
@@ -58,15 +55,15 @@ async fn main() -> anyhow::Result<()> {
     tokio::select! {
         _ = sig_int => {
             println!("\nCtrl+c退出...");
-            shutdown
-                .send(())
-                .expect("发送关闭信号失败，考虑子线程出错或外部干预，考虑sudo kill主线程");
+            // shutdown
+            //     .send(())
+            //     .expect("发送关闭信号失败，考虑子线程出错或外部干预，考虑sudo kill主线程");
         }
         _ = sleep(Duration::from_secs(1000)) => {
             println!("\n超时退出...");
-            shutdown
-                .send(())
-                .expect("发送关闭信号失败，考虑子线程出错或外部干预，考虑sudo kill主线程");
+            // shutdown
+            //     .send(())
+            //     .expect("发送关闭信号失败，考虑子线程出错或外部干预，考虑sudo kill主线程");
         }
     }
 

@@ -20,7 +20,6 @@ struct Opt {
     iface: String,
 }
 
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let opt = Opt::parse();
@@ -98,28 +97,33 @@ async fn main() -> anyhow::Result<()> {
                                     .expect("发送成功次数失败，考虑外部干预");
                                 println!("工作线程第一次成功");
                                 // Print the data in hexdump format
-                                let bytes: Vec<u8> = data.iter()
+                                let bytes: Vec<u8> = data
+                                    .iter()
                                     .flat_map(|&val| val.to_le_bytes().to_vec())
                                     .collect();
 
                                 for (i, chunk) in bytes.chunks(16).enumerate() {
                                     // Print the offset
                                     print!("{:08x}  ", i * 16);
-                                    
+
                                     // Print hex values
                                     for &byte in chunk {
                                         print!("{:02x} ", byte);
                                     }
-                                    
+
                                     // Add padding if needed
                                     for _ in 0..(16 - chunk.len()) {
                                         print!("   ");
                                     }
-                                    
+
                                     // Print ASCII representation
                                     print!(" |");
                                     for &byte in chunk {
-                                        let c = if byte >= 32 && byte <= 126 { byte as char } else { '.' };
+                                        let c = if byte >= 32 && byte <= 126 {
+                                            byte as char
+                                        } else {
+                                            '.'
+                                        };
                                         print!("{}", c);
                                     }
                                     println!("|");
