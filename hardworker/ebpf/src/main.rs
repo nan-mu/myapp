@@ -57,7 +57,7 @@ fn try_hardworker(ctx: XdpContext) -> Result<u32, ()> {
         unsafe { (*tcphdr).source.swap_bytes() },
         unsafe { (*tcphdr).dest.swap_bytes() }
     );
-    if unsafe { (*tcphdr).dest } == MARK.port.swap_bytes() {
+    if unsafe { (*tcphdr).dest } != MARK.port.swap_bytes() {
         return Ok(xdp_action::XDP_PASS);
     }
 
