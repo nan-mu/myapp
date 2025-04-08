@@ -1,16 +1,11 @@
 use anyhow::Context as _;
-use aya::{
-    maps::RingBuf,
-    programs::{Xdp, XdpFlags},
-};
+use aya::
+    programs::{Xdp, XdpFlags}
+;
 use clap::Parser;
 #[rustfmt::skip]
 use log::{debug, warn};
-use tokio::{
-    io::unix::AsyncFd,
-    // signal::unix::{signal, SignalKind},
-    time::{sleep, Duration},
-};
+use tokio::time::{sleep, Duration};
 
 // mod fd_handle;
 #[derive(Debug, Parser)]
@@ -18,8 +13,6 @@ struct Opt {
     #[clap(short, long, default_value = "wlan0")]
     iface: String,
 }
-
-const U64_COUNT: usize = 150;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
