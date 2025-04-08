@@ -43,12 +43,20 @@ fn try_hardworker(ctx: XdpContext) -> Result<u32, ()> {
 
     let ipv4hdr: *const Ipv4Hdr = ptr_at(&ctx, EthHdr::LEN)?;
     match unsafe { (*ipv4hdr).tos } {
-        TARGET_TOS => {}
+        TARGET_TOS => {
+            debug!(&ctx, "hit tos");
+        }
         _ => return Ok(xdp_action::XDP_PASS),
     }
 
     // 我发现光一个tos还是不够，加一个tcp端口号
     let tcphdr: *const TcpHdr = ptr_at(&ctx, EthHdr::LEN + Ipv4Hdr::LEN)?;
+    debug!(
+        &ctx,
+        "tcp src port: {}, tcp dst port: {}",
+        unsafe { (*tcphdr).source.swap_bytes() },
+        unsafe { (*tcphdr).dest.swap_bytes() }
+    );
     if unsafe { (*tcphdr).dest } == MARK.port.swap_bytes() {
         return Ok(xdp_action::XDP_PASS);
     }
