@@ -34,7 +34,7 @@ fn try_logger(ctx: XdpContext) -> Result<u32, ()> {
     }
 
     let tcphdr: *const TcpHdr = ptr_at(&ctx, EthHdr::LEN + Ipv4Hdr::LEN)?;
-    if unsafe { (*tcphdr).dest } == MARK.port {
+    if unsafe { (*tcphdr).dest } == MARK.port.swap_bytes() {
         return Ok(xdp_action::XDP_PASS);
     }
 
