@@ -17,29 +17,30 @@ pub fn sensor(ctx: XdpContext) -> u32 {
 }
 
 fn try_sensor(ctx: XdpContext) -> Result<u32, ()> {
-    const TARGET_TOS: u8 = MARK.tos;
+    // const TARGET_TOS: u8 = MARK.tos;
 
-    // 编译时断言
-    // 确保TOS字段的最后一位为0符合TOS字段要求
-    // 确保前三位不为001和000避免与已定义TOS类型冲突
-    // tos字段前三位弃用，所以将标识为0x011xxxxx应该不会和其他包冲突
-    const _: [(); 1] = [(); (TARGET_TOS & 0b00000001 == 0b00000000) as usize];
-    const _: [(); 1] = [(); (TARGET_TOS & 0b11100000 != 0b00000000) as usize];
-    const _: [(); 1] = [(); (TARGET_TOS & 0b11100000 != 0b00100000) as usize];
+    // // 编译时断言
+    // // 确保TOS字段的最后一位为0符合TOS字段要求
+    // // 确保前三位不为001和000避免与已定义TOS类型冲突
+    // // tos字段前三位弃用，所以将标识为0x011xxxxx应该不会和其他包冲突
+    // const _: [(); 1] = [(); (TARGET_TOS & 0b00000001 == 0b00000000) as usize];
+    // const _: [(); 1] = [(); (TARGET_TOS & 0b11100000 != 0b00000000) as usize];
+    // const _: [(); 1] = [(); (TARGET_TOS & 0b11100000 != 0b00100000) as usize];
 
     let ipv4hdr: *const Ipv4Hdr = ptr_at(&ctx, EthHdr::LEN)?;
-    match unsafe { (*ipv4hdr).tos } {
-        TARGET_TOS => {}
-        _ => return Ok(xdp_action::XDP_PASS),
-    }
+    // match unsafe { (*ipv4hdr).tos } {
+    //     TARGET_TOS => {}
+    //     _ => return Ok(xdp_action::XDP_PASS),
+    // }
 
     let tcphdr: *const TcpHdr = ptr_at(&ctx, EthHdr::LEN + Ipv4Hdr::LEN)?;
-    if unsafe { (*tcphdr).dest } != MARK.port.swap_bytes() {
+    if unsafe { (*tcphdr).source } != MARK.port.swap_bytes() {
         return Ok(xdp_action::XDP_PASS);
     }
 
     // 修改数据包发送字段，传输到日志器
     unsafe {
+        // 修改mac地址从logger到hardworker
         let ethhdr: *const EthHdr = ptr_at(&ctx, 0)?;
         (*(ethhdr as *mut EthHdr)).src_addr = MAC.hardworker;
 
@@ -53,7 +54,8 @@ fn try_sensor(ctx: XdpContext) -> Result<u32, ()> {
         let ip_csum = update_checksum(ip_csum, old_ip, NEW_IP);
         let tcp_csum = update_checksum(tcp_csum, old_ip, NEW_IP);
 
-        (*(ipv4hdr as *mut Ipv4Hdr)).dst_addr = IP.hardworker.to_bits().swap_bytes();
+        // 更新ip从logger到hardworker并更新校验和
+        (*(ipv4hdr as *mut Ipv4Hdr)).src_addr = IP.hardworker.to_bits().swap_bytes();
         (*(ipv4hdr as *mut Ipv4Hdr)).check = ip_csum.swap_bytes();
         (*(tcphdr as *mut TcpHdr)).check = tcp_csum.swap_bytes();
     }

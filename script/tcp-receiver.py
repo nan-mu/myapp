@@ -6,18 +6,17 @@ import argparse
 from datetime import datetime
 
 def tcp_server(host='0.0.0.0', port=12345):
-    """接收TCP数据并显示统计信息"""
-    # 创建TCP套接字
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+    server_socket.setsockopt(socket.IPPROTO_IP, socket.IP_TOS, 0x6c)
     
-    # 允许地址重用
+    # 必须设置 SO_REUSEADDR
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     
-    # 绑定地址和端口
     server_socket.bind((host, port))
-    
-    # 监听连接
     server_socket.listen(5)
+    # 后续代码保持不变...
+
     print(f"[{datetime.now()}] TCP服务器启动，监听 {host}:{port}")
     
     try:
