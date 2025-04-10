@@ -1,3 +1,5 @@
+include!(concat!(env!("OUT_DIR"), "/const_gen.rs"));
+
 use anyhow::Context as _;
 use aya::{
     maps::RingBuf,
@@ -8,7 +10,6 @@ use clap::Parser;
 use log::{debug, warn};
 use tokio::{
     io::unix::AsyncFd,
-    // signal::unix::{signal, SignalKind},
     time::{sleep, Duration},
 };
 
@@ -18,8 +19,6 @@ struct Opt {
     #[clap(short, long, default_value = "wlan0")]
     iface: String,
 }
-
-const U64_COUNT: usize = 150;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -79,14 +78,14 @@ async fn main() -> anyhow::Result<()> {
         let mut handle = async move || {
             let mut success = 0 as u64;
             let mut fail = FaillType::default();
-            let mut data = [0u64; U64_COUNT];
+            let mut data = [0u64; DATA.load_u64_count];
             loop {
                 while let Ok(mut guard) = poll.readable_mut().await {
                     if let Some(new_data) = guard.get_inner_mut().next() {
-                        if new_data.len() == std::mem::size_of::<[u64; U64_COUNT]>() {
+                        if new_data.len() == std::mem::size_of::<[u64; DATA.load_u64_count]>() {
                             let val = unsafe {
                                 std::ptr::read_unaligned(
-                                    new_data.as_ptr() as *const [u64; U64_COUNT]
+                                    new_data.as_ptr() as *const [u64; DATA.load_u64_count]
                                 )
                             };
                             drop(new_data);
@@ -98,28 +97,33 @@ async fn main() -> anyhow::Result<()> {
                                     .expect("发送成功次数失败，考虑外部干预");
                                 println!("工作线程第一次成功");
                                 // Print the data in hexdump format
-                                let bytes: Vec<u8> = data.iter()
+                                let bytes: Vec<u8> = data
+                                    .iter()
                                     .flat_map(|&val| val.to_le_bytes().to_vec())
                                     .collect();
 
                                 for (i, chunk) in bytes.chunks(16).enumerate() {
                                     // Print the offset
                                     print!("{:08x}  ", i * 16);
-                                    
+
                                     // Print hex values
                                     for &byte in chunk {
                                         print!("{:02x} ", byte);
                                     }
-                                    
+
                                     // Add padding if needed
                                     for _ in 0..(16 - chunk.len()) {
                                         print!("   ");
                                     }
-                                    
+
                                     // Print ASCII representation
                                     print!(" |");
                                     for &byte in chunk {
-                                        let c = if byte >= 32 && byte <= 126 { byte as char } else { '.' };
+                                        let c = if byte >= 32 && byte <= 126 {
+                                            byte as char
+                                        } else {
+                                            '.'
+                                        };
                                         print!("{}", c);
                                     }
                                     println!("|");

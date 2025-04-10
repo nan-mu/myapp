@@ -1,0 +1,17 @@
+[mac]
+logger = "2c:cf:67:3e:3a:02"
+hardworker = "2c:cf:67:3e:3b:03"
+sensor = "2c:cf:67:18:02:23"
+
+[ip]
+logger = "192.168.1.93"
+hardworker = "192.168.1.79"
+sensor = "192.168.1.85"
+
+[mark]
+tos = 104
+port = 12345
+
+[data]
+mtu = 1200
+load_u64_count = 128
