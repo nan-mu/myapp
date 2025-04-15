@@ -35,6 +35,10 @@ aya-build = { workspace = true }
 # features.
 ebpf = { path = "../ebpf" }
 
+const-gen = { workspace = true, features = ["std", "derive", "net"]}
+toml = { workspace = true , features = ["parse"] }
+serde = { workspace = true, features = ["derive"] }
+
 [[bin]]
 name = "hardworker"
 path = "src/main.rs"

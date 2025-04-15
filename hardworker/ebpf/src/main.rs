@@ -1,7 +1,7 @@
 #![no_std]
 #![no_main]
 
-use core::net::Ipv4Addr;
+include!(concat!(env!("OUT_DIR"), "/const_gen.rs"));
 
 use aya_ebpf::{
     bindings::xdp_action,
@@ -10,7 +10,7 @@ use aya_ebpf::{
     programs::XdpContext,
 };
 
-use aya_log_ebpf::{debug, error, info};
+use aya_log_ebpf::{debug, error};
 use network_types::{eth::EthHdr, ip::Ipv4Hdr, tcp::TcpHdr};
 
 // mod csum;
@@ -24,16 +24,14 @@ pub fn hardworker(ctx: XdpContext) -> u32 {
 }
 
 // 计划传输几个u64大小
-const U64_COUNT: usize = 150;
-const DATA_SIZE: usize = U64_COUNT * 8;
-const _: [(); 1] = [(); (DATA_SIZE <= 1212) as usize]; // 保守负载大小
-const DSTIP: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 93); // logger ip
+const DATA_SIZE: usize = DATA.load_u64_count * 8;
+const _: [(); 1] = [(); ((DATA_SIZE + Ipv4Hdr::LEN + TcpHdr::LEN) <= DATA.mtu) as usize]; // 保守负载大小
 
 #[map(name = "TARGET_MAP")]
 static mut TARGET_MAP: RingBuf = RingBuf::with_byte_size((DATA_SIZE) as u32, 0);
 
 fn try_hardworker(ctx: XdpContext) -> Result<u32, ()> {
-    const TARGET_TOS: u8 = 0b01101000;
+    const TARGET_TOS: u8 = MARK.tos;
 
     // 编译时断言
     // 确保TOS字段的最后一位为0符合TOS字段要求
@@ -45,29 +43,48 @@ fn try_hardworker(ctx: XdpContext) -> Result<u32, ()> {
 
     let ipv4hdr: *const Ipv4Hdr = ptr_at(&ctx, EthHdr::LEN)?;
     match unsafe { (*ipv4hdr).tos } {
-        TARGET_TOS => {}
+        TARGET_TOS => {
+            debug!(&ctx, "hit tos");
+        }
         _ => return Ok(xdp_action::XDP_PASS),
     }
 
-    // 以下确定是目的数据包
-    info!(&ctx, "get");
-
-    // 只处理携带负载的tcp
+    // 我发现光一个tos还是不够，加一个tcp端口号
     let tcphdr: *const TcpHdr = ptr_at(&ctx, EthHdr::LEN + Ipv4Hdr::LEN)?;
     debug!(
         &ctx,
-        "TCP flags: FIN={}, SYN={}, RST={}, PSH={}, ACK={}, URG={}",
-        unsafe { (*tcphdr).fin() },
-        unsafe { (*tcphdr).syn() },
-        unsafe { (*tcphdr).rst() },
-        unsafe { (*tcphdr).psh() },
-        unsafe { (*tcphdr).ack() },
-        unsafe { (*tcphdr).urg() }
+        "tcp src port: {}, tcp dst port: {}",
+        unsafe { (*tcphdr).source.swap_bytes() },
+        unsafe { (*tcphdr).dest.swap_bytes() }
     );
+    if unsafe { (*tcphdr).dest } != MARK.port.swap_bytes() {
+        return Ok(xdp_action::XDP_PASS);
+    }
+
+    debug!(
+        &ctx,
+        "get TCP {} pack",
+        if unsafe { (*tcphdr).fin() } == 1 {
+            "FIN"
+        } else if unsafe { (*tcphdr).syn() } == 1 {
+            "SYN"
+        } else if unsafe { (*tcphdr).rst() } == 1 {
+            "RST"
+        } else if unsafe { (*tcphdr).psh() } == 1 {
+            "PSH"
+        } else if unsafe { (*tcphdr).ack() } == 1 {
+            "ACK"
+        } else if unsafe { (*tcphdr).urg() } == 1 {
+            "URG"
+        } else {
+            "ERR"
+        }
+    );
+
     if unsafe { (*tcphdr).psh() } == 1 {
         unsafe {
             #[allow(static_mut_refs)]
-            let reserved = TARGET_MAP.reserve::<[u64; U64_COUNT]>(0);
+            let reserved = TARGET_MAP.reserve::<[u64; DATA.load_u64_count]>(0);
             match reserved {
                 Some(mut entry) => {
                     // 拷贝DATA_SIZE字节数据到ring_buf
@@ -84,69 +101,28 @@ fn try_hardworker(ctx: XdpContext) -> Result<u32, ()> {
     // 修改数据包发送字段，传输到日志器
     unsafe {
         let ethhdr: *const EthHdr = ptr_at(&ctx, 0)?;
-        let ethhdr_ptr: *const [u8; EthHdr::LEN] = ptr_at(&ctx, 0)?;
-        // for i in 0..EthHdr::LEN {
-        //     debug!(&ctx, "ethhdr[{}]: 0x{:x}", i, (*ethhdr_ptr)[i]);
-        // }
-        // [0x54, 0x6c, 0xeb, 0x72, 0xbd, 0x84] for pc 96
-        // [0x2c, 0xcf, 0x67, 0x3e, 0x3b, 0x03] for logger test2 79
-        // [0x2c, 0xcf, 0x67, 0x3e, 0x3a, 0x02] for test1 93
-        (*(ethhdr as *mut EthHdr)).src_addr = [0x2c, 0xcf, 0x67, 0x3e, 0x3b, 0x03];
-        (*(ethhdr as *mut EthHdr)).dst_addr = [0x2c, 0xcf, 0x67, 0x3e, 0x3a, 0x02];
-        // for i in 0..EthHdr::LEN {
-        //     debug!(&ctx, "changed ethhdr[{}]: 0x{:x}", i, (*ethhdr_ptr)[i]);
-        // }
-
-        debug!(
-            &ctx,
-            "changed ethhdr src_addr: 0x{:x}",
-            (*ethhdr).src_addr[5]
-        );
-        debug!(
-            &ctx,
-            "changed ethhdr dst_addr: 0x{:x}",
-            (*ethhdr).dst_addr[5]
-        );
+        (*(ethhdr as *mut EthHdr)).src_addr = MAC.hardworker;
+        (*(ethhdr as *mut EthHdr)).dst_addr = MAC.logger;
 
         let ip_csum = (*ipv4hdr).check.swap_bytes();
         let tcp_csum = (*tcphdr).check.swap_bytes();
-        debug!(&ctx, "old ip csum: 0x{:x}", ip_csum);
-        debug!(&ctx, "old tcp csum: 0x{:x}", tcp_csum);
 
         let old_ip = (*ipv4hdr).dst_addr.swap_bytes() as u16;
-        const NEW_IP: u16 = u16::from_be_bytes([DSTIP.octets()[2], DSTIP.octets()[3]]);
-        debug!(&ctx, "old ip: 0x{:x}", old_ip);
-        debug!(&ctx, "new ip: 0x{:x}", NEW_IP);
+        const NEW_IP: u16 = u16::from_be_bytes([IP.logger.octets()[2], IP.logger.octets()[3]]);
 
         let ip_csum = update_checksum(ip_csum, old_ip, NEW_IP);
         let tcp_csum = update_checksum(tcp_csum, old_ip, NEW_IP);
 
-        debug!(&ctx, "new ip csum: 0x{:x}", ip_csum);
-        debug!(&ctx, "new tcp csum: 0x{:x}", tcp_csum);
-
-        (*(ipv4hdr as *mut Ipv4Hdr)).dst_addr = DSTIP.to_bits().swap_bytes();
+        (*(ipv4hdr as *mut Ipv4Hdr)).dst_addr = IP.logger.to_bits().swap_bytes();
         (*(ipv4hdr as *mut Ipv4Hdr)).check = ip_csum.swap_bytes();
         (*(tcphdr as *mut TcpHdr)).check = tcp_csum.swap_bytes();
-
-        // 打印ipv4头部所有字段，一行一行打印
-        // debug!(
-        //     &ctx,
-        //     "ipv4hdr version: {}",
-        //     unsafe { (*ipv4hdr).version }
-        // );
-        // debug!(
-        //     &ctx,
-        //     "ipv4hdr ihl: {}",
-        //     unsafe { (*ipv4hdr).ihl }
-        // );
-        debug!(&ctx, "ipv4hdr tos: 0x{:x}", (*ipv4hdr).tos);
-        debug!(&ctx, "ipv4hdr total_len: {}", (*ipv4hdr).tot_len.swap_bytes());
-        debug!(&ctx, "ipv4hdr check: 0x{:x}", (*ipv4hdr).check.swap_bytes());
-        debug!(&ctx, "ipv4hdr src_addr: 0x{:x}", (*ipv4hdr).src_addr.swap_bytes());
-        debug!(&ctx, "ipv4hdr dst_addr: 0x{:x}", (*ipv4hdr).dst_addr.swap_bytes());
     }
 
-    debug!(&ctx, "Returning XDP action: XDP_TX");
+    debug!(
+        &ctx,
+        "pack reach XDP_TX with TCP checksum: 0x{:x}",
+        unsafe { (*tcphdr).check.swap_bytes() }
+    );
     Ok(xdp_action::XDP_TX)
 }
 

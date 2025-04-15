@@ -36,5 +36,5 @@ aya-build = { workspace = true }
 ebpf = { path = "../ebpf" }
 
 [[bin]]
-name = "hardworker"
+name = "sensor"
 path = "src/main.rs"
