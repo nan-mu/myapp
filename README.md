@@ -1,29 +1,53 @@
 # myapp
 
-An eBPF-based communication middleware validation demo.
+An eBPF-based communication middleware validation demo. The core process will be supplemented after the code work is completed.
 
 I should come up with a good name later.
 
 ## Known
 
-A significant performance gap has been observed between the Raspberry Pi environment (native Linux kernel environment) and WSL (escaped kernel environment). Using 4KB and 1000Hz as strict conditions, the success rate on the Raspberry Pi was 90.158% and 85.972%.
+The research goal is now shifting from throughput to a practical scenario, with fixed frequency and data volume, and using ebpf to reduce the overhead on the target machine.
 
-I strongly recommend avoiding running it on WSL. I don't know what other issues my computer might have, but 85.972% was the data collected shortly after booting. Sometimes, under the same conditions, I get around 60%. Additionally, more buffer overflows were observed under WSL.
+Currently writing the measurement program in the benchmark branch. The following are some related term explanations:
+
+* sensor: The data sender wants to send data to the hardworker for processing.
+* hardworker: Receive data from the sensor. Assuming that the device completes important logical decisions, we hope to reduce the resource overhead of the device in communication while obtaining TCP type communication guarantees.
+* logger: Receive data packets from the network and convert them into logs and store them in its own database.
+
+### issues
+
+Although TCP communication was successful before, the following problems were found:
+
+1. Sensor lost hardworker's mac address, logger lost sensor's mac address.
+  1. `arp -n` shows these mac are `incomplete`.
+  1. Communication returned to normal after manually fixing the mac after using `sudo arp -s <ip> <mac>`
+1. Windows(use ssh control all of them) shows sensor is Unreachable.
+  1. `ping` show that.
+  1. After using `route -p add <sensor ip> MASK <mask> <net gate ip> IF 3` communication returned.
+
+I think the above reason is another reason to write a daemon. I expect the daemon to fix these mac addresses in advance and compile a specific ebpf program.
 
 ## TODO
 
-- [ ] Use YAML instead of command-line arguments as startup parameters
 - [ ] Rewrite the Python raw IPv4 script using Rust
+- [ ] Write a simulated load to measure the system load with the same amount of data and user-mode handler programs
+- [ ] Write a benchmark to measure the reduction of system load
 
 ## Synchronize Code
 
-```shell
-while inotifywait -r -e modify,create,delete,move ./; do
-    rsync -av --delete --exclude-from='.gitignore' --exclude='.git/' ./ labpi:myapp/ # For single synchronization, just run this
-done
-```
+Now there is no need for heavy testing, use git pull to synchronize the code
 
 ## Prerequisites
+
+> ### TL&DR
+> ```bash
+> #install Rust and have Cargo env first
+> rustup toolchain install stable && \
+> rustup toolchain install nightly --component rust-src && \
+> cargo install bpf-linker && \
+> git clone https://www.github.com/nan-mu/myapp.git && cd myapp && \
+> #And go to the folder you want to run
+> ```
 
 1. stable rust toolchains: `rustup toolchain install stable`
 1. nightly rust toolchains: `rustup toolchain install nightly --component rust-src`
