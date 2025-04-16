@@ -12,6 +12,7 @@ aya-log-ebpf = { version = "0.1.1", default-features = false }
 const-gen = { git = "https://github.com/nan-mu/const-gen.git", branch = "net", default-features = false }
 toml = { version = "0.8", default-features = false }
 serde = { version = "1", default-features = false }
+procfs = { version = "0.17", default-features = false }
 
 anyhow = { version = "1", default-features = false }
 # `std` feature is currently required to build `clap`.
