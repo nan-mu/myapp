@@ -16,17 +16,17 @@ services:
     networks:
       - measure
 
-  glances:
+    glances:
     image: nicolargo/glances:latest-full
     container_name: glances
     depends_on:
       - influxdb
     environment:
-      - GLANCES_OPT=-C /glances/conf/glances.conf
+      - GLANCES_OPT=-w -C /glances/conf/glances.conf
     volumes:
       - ./glances.conf:/glances/conf/glances.conf:ro
     ports:
-      - "61208:61208"  # Web UI (optional)
+      - "61208:61208"  # Web UI
     networks:
       - measure
 
