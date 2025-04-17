@@ -38,7 +38,8 @@ I think the above reason is another reason to write a daemon. I expect the daemo
 
 ## TODO
 
-- [ ] Rewrite the Python raw IPv4 script using Rust
+- [x] Rewrite the Python raw IPv4 script using Rust
+- [ ] Rewrite the logic of sensor receiving ebpf data. Some problems were found during testing.
 - [ ] Write a simulated load to measure the system load with the same amount of data and user-mode handler programs
 - [ ] Write a benchmark to measure the reduction of system load
 
