@@ -1,0 +1,32 @@
+networks:
+  measure:
+    name: measure
+
+volumes:
+  influxdb-data:
+
+services:
+  influxdb:
+    image: influxdb:latest
+    networks:
+      - measure
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+    environment:
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=admin
+      - DOCKER_INFLUXDB_INIT_PASSWORD=admin123
+      - DOCKER_INFLUXDB_INIT_ORG=myorg
+      - DOCKER_INFLUXDB_INIT_BUCKET=glances
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=mytoken
+
+  glances:
+    image: nicolargo/glances:latest
+    networks:
+      - measure
+    depends_on:
+      - influxdb
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./config/glances.conf:/root/.config/glances/glances.conf
+    command: ["glances", "--export", "influxdb2", "-C", "/root/.config/glances/glances.conf"]
