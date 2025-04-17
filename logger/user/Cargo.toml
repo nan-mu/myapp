@@ -17,6 +17,9 @@ tokio = { workspace = true, features = ["full"] }
 clap = { workspace = true, features = ["derive"] }
 
 mio = { version = "1", features = ["os-poll"]}
+procfs = { workspace = true, features = ["serde"] }
+serde = { workspace = true, features = ["derive"] }
+toml = { workspace = true , features = ["parse"] }
 
 [build-dependencies]
 anyhow = { workspace = true }
