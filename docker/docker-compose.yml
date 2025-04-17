@@ -1,32 +1,38 @@
-networks:
-  measure:
-    name: measure
-
-volumes:
-  influxdb-data:
-
 services:
   influxdb:
     image: influxdb:latest
-    networks:
-      - measure
-    volumes:
-      - influxdb-data:/var/lib/influxdb2
+    container_name: influxdb
+    ports:
+      - "8086:8086"  # Web UI
     environment:
       - DOCKER_INFLUXDB_INIT_MODE=setup
       - DOCKER_INFLUXDB_INIT_USERNAME=admin
       - DOCKER_INFLUXDB_INIT_PASSWORD=admin123
       - DOCKER_INFLUXDB_INIT_ORG=myorg
       - DOCKER_INFLUXDB_INIT_BUCKET=glances
-      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=mytoken
-
-  glances:
-    image: nicolargo/glances:latest
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=my-secret-token
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
     networks:
       - measure
+
+  glances:
+    image: nicolargo/glances:latest-full
+    container_name: glances
     depends_on:
       - influxdb
+    environment:
+      - GLANCES_OPT=-C /glances/conf/glances.conf
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ./config/glances.conf:/root/.config/glances/glances.conf
-    command: ["glances", "--export", "influxdb2", "-C", "/root/.config/glances/glances.conf"]
+      - ./glances.conf:/glances/conf/glances.conf:ro
+    ports:
+      - "61208:61208"  # Web UI (optional)
+    networks:
+      - measure
+
+volumes:
+  influxdb-data:
+
+networks:
+  measure:
+    driver: bridge
