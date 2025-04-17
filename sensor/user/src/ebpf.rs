@@ -34,8 +34,6 @@ impl EbpfBuilder {
     }
 
     pub fn build_xdp(&mut self) -> Result<EbpfHandle> {
-        env_logger::init();
-        
         let mut ebpf = aya::Ebpf::load(aya::include_bytes_aligned!(concat!(
             env!("OUT_DIR"),
             "/sensor"

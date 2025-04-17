@@ -14,7 +14,7 @@ use ebpf::EbpfBuilder;
 struct Opt {
     #[clap(short, long, default_value = "../config.toml")]
     config: String,
-    #[clap(short, long, default_value = "../consts.toml")]
+    #[clap(short, long, default_value = "../const.toml")]
     consts: String,
 }
 

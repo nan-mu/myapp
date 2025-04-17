@@ -4,6 +4,7 @@ use config::TcpConfig;
 use ebpf::EbpfBuilder;
 #[rustfmt::skip]
 use log::debug;
+use log::info;
 use tcp::TcpHandler;
 use tokio::time::{sleep, Duration};
 
@@ -16,7 +17,7 @@ mod ebpf;
 struct Opt {
     #[clap(short, long, default_value = "../config.toml")]
     config: String,
-    #[clap(short, long, default_value = "../consts.toml")]
+    #[clap(short, long, default_value = "../const.toml")]
     consts: String,
 }
 
@@ -40,18 +41,18 @@ async fn main() -> anyhow::Result<()> {
 
     let sig_int = tokio::signal::ctrl_c();
 
-    println!("准备完成，等待Ctrl-C或超时退出...");
+    info!("准备完成，等待Ctrl-C或超时退出...");
 
     tokio::select! {
         _ = sig_int => {
-            println!("\nCtrl+c退出...");
+            info!("\nCtrl+c退出...");
             tcp_shutdown_tx
                 .send(())
                 .await
                 .context("发送TCP关闭信号失败")?;
         }
         _ = sleep(Duration::from_secs(1000)) => {
-            println!("\n超时退出...");
+            info!("\n超时退出...");
             tcp_shutdown_tx
                 .send(())
                 .await
