@@ -95,19 +95,21 @@ async fn handle(
     mut shutdown: broadcast::Receiver<()>,
     data_counter: Arc<AtomicUsize>,
 ) -> Result<()> {
-    let mut buf = [0; 1024];
+    let mut buf = vec![0; max_size * 2];
     let begin = tokio::time::Instant::now();
     loop {
         tokio::select! {
             readed = socket.read(&mut buf) => {
                 match readed {
-                    Ok(n) => {if n > max_size {
-                        warn!("接收数据 {max_size} 字节，超过最大限制 {n} 字节");
-                    }
-                    data_counter.fetch_add(n, Ordering::Relaxed);
-                    info!("收到 {n} 字节数据：{:02x?}", &buf[..max_size]);},
+                    Ok(0) => {},
+                    Ok(n) => {
+                        if n > max_size {
+                            warn!("接收数据 {max_size} 字节，超过最大限制 {n} 字节");
+                        }
+                        data_counter.fetch_add(n, Ordering::Relaxed);
+                        info!("收到 {n} 字节数据");
+                    },
                     Err(e) => {
-                        
                         bail!("读取数据失败: {}", e);
                     }
                 }

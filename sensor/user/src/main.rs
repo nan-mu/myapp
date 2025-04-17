@@ -23,6 +23,8 @@ async fn main() -> anyhow::Result<()> {
     let opt: Opt = Opt::parse();
     let Opt { config, consts } = opt;
 
+    env_logger::init();
+
     let config = TcpConfig::build(config, consts)?;
 
     let _ebpf = EbpfBuilder::build(config.ifname.clone())

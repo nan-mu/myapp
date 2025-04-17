@@ -41,7 +41,7 @@ impl EbpfBuilder {
         if let Err(e) = aya_log::EbpfLogger::init(&mut ebpf) {
             debug!("初始化ebpf日志器失败: {}", e);
         }
-        let program: &mut Xdp = ebpf.program_mut("sensor").unwrap().try_into()?;
+        let program: &mut Xdp = ebpf.program_mut("logger").unwrap().try_into()?;
         program.load()?;
         program
             .attach(&self.ifname, XdpFlags::default())
