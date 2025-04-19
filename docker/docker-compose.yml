@@ -6,29 +6,39 @@ services:
       - "8086:8086"  # Web UI
     environment:
       - DOCKER_INFLUXDB_INIT_MODE=setup
-      - DOCKER_INFLUXDB_INIT_USERNAME=admin
-      - DOCKER_INFLUXDB_INIT_PASSWORD=admin123
-      - DOCKER_INFLUXDB_INIT_ORG=myorg
-      - DOCKER_INFLUXDB_INIT_BUCKET=glances
-      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=my-secret-token
+      - DOCKER_INFLUXDB_INIT_ORG=fukuda
+      - DOCKER_INFLUXDB_INIT_BUCKET=telegraf
+      - DOCKER_INFLUXDB_INIT_USERNAME_FILE=/run/secrets/influxdb2-admin-username
+      - DOCKER_INFLUXDB_INIT_PASSWORD_FILE=/run/secrets/influxdb2-admin-password
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN_FILE=/run/secrets/influxdb2-admin-token
     volumes:
       - influxdb-data:/var/lib/influxdb2
     networks:
       - measure
-
-    glances:
-    image: nicolargo/glances:latest-full
-    container_name: glances
-    depends_on:
-      - influxdb
-    environment:
-      - GLANCES_OPT=-w -C /glances/conf/glances.conf
+    secrets:
+      - influxdb2-admin-username
+      - influxdb2-admin-password
+      - influxdb2-admin-token
+  telegraf:
+    image: telegraf:latest
+    container_name: telegraf
     volumes:
-      - ./glances.conf:/glances/conf/glances.conf:ro
-    ports:
-      - "61208:61208"  # Web UI
+      - /:/hostfs:ro
+      - ./telegraf.conf:/etc/telegraf/telegraf.conf:ro
+    environment:
+      - HOST_ETC=/hostfs/etc
+      - HOST_PROC=/hostfs/proc
+      - HOST_SYS=/hostfs/sys
+      - HOST_VAR=/hostfs/var
+      - HOST_RUN=/hostfs/run
+      - HOST_MOUNT_PREFIX=/hostfs
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN
+    command: sh -c "export DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=$$(cat /run/secrets/influxdb2-admin-token) && exec telegraf --config /etc/telegraf/telegraf.conf"
+    secrets:
+      - influxdb2-admin-token
     networks:
       - measure
+
 
 volumes:
   influxdb-data:
@@ -36,3 +46,11 @@ volumes:
 networks:
   measure:
     driver: bridge
+
+secrets:
+  influxdb2-admin-password:
+    file: ./.env.influxdb2-admin-password
+  influxdb2-admin-username:
+    file: ./.env.influxdb2-admin-username
+  influxdb2-admin-token:
+    file: ./.env.influxdb2-admin-token
