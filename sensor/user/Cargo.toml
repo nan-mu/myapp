@@ -15,8 +15,10 @@ log = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 
 clap = { workspace = true, features = ["derive"] }
-
+toml = { workspace = true , features = ["parse"] }
 mio = { version = "1", features = ["os-poll"]}
+serde = { workspace = true, features = ["derive"] }
+procfs = { workspace = true, features = ["serde"] }
 
 [build-dependencies]
 anyhow = { workspace = true }

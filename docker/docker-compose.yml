@@ -1,0 +1,56 @@
+services:
+  influxdb:
+    image: influxdb:latest
+    container_name: influxdb
+    ports:
+      - "8086:8086"  # Web UI
+    environment:
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_ORG=fukuda
+      - DOCKER_INFLUXDB_INIT_BUCKET=telegraf
+      - DOCKER_INFLUXDB_INIT_USERNAME_FILE=/run/secrets/influxdb2-admin-username
+      - DOCKER_INFLUXDB_INIT_PASSWORD_FILE=/run/secrets/influxdb2-admin-password
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN_FILE=/run/secrets/influxdb2-admin-token
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+    networks:
+      - measure
+    secrets:
+      - influxdb2-admin-username
+      - influxdb2-admin-password
+      - influxdb2-admin-token
+  telegraf:
+    image: telegraf:latest
+    container_name: telegraf
+    volumes:
+      - /:/hostfs:ro
+      - ./telegraf.conf:/etc/telegraf/telegraf.conf:ro
+    environment:
+      - HOST_ETC=/hostfs/etc
+      - HOST_PROC=/hostfs/proc
+      - HOST_SYS=/hostfs/sys
+      - HOST_VAR=/hostfs/var
+      - HOST_RUN=/hostfs/run
+      - HOST_MOUNT_PREFIX=/hostfs
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN
+    command: sh -c "export DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=$$(cat /run/secrets/influxdb2-admin-token) && exec telegraf --config /etc/telegraf/telegraf.conf"
+    secrets:
+      - influxdb2-admin-token
+    networks:
+      - measure
+
+
+volumes:
+  influxdb-data:
+
+networks:
+  measure:
+    driver: bridge
+
+secrets:
+  influxdb2-admin-password:
+    file: ./.env.influxdb2-admin-password
+  influxdb2-admin-username:
+    file: ./.env.influxdb2-admin-username
+  influxdb2-admin-token:
+    file: ./.env.influxdb2-admin-token
