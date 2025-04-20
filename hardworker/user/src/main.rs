@@ -6,8 +6,8 @@ use aya::{
     programs::{Xdp, XdpFlags},
 };
 use clap::Parser;
-#[rustfmt::skip]
-use log::{debug, warn};
+use log::{debug, info, warn};
+use pidfile::PidFile;
 use tokio::{
     io::unix::AsyncFd,
     time::{sleep, Duration},
@@ -25,6 +25,9 @@ async fn main() -> anyhow::Result<()> {
     let opt = Opt::parse();
 
     env_logger::init();
+
+    // 创建pid文件
+    let pidfile = PidFile::new("/var/run/hardworker.pid")?;
 
     // Bump the memlock rlimit. This is needed for older kernels that don't use the
     // new memcg based accounting, see https://lwn.net/Articles/837122/
@@ -54,7 +57,7 @@ async fn main() -> anyhow::Result<()> {
     let (shutdown, rx) = tokio::sync::oneshot::channel();
 
     let handle = tokio::task::spawn(async move {
-        println!("工作线程TID: {}", unsafe {
+        info!("工作线程TID: {}", unsafe {
             libc::syscall(libc::SYS_gettid)
         });
 
@@ -95,7 +98,7 @@ async fn main() -> anyhow::Result<()> {
                                 tx_success
                                     .send(success)
                                     .expect("发送成功次数失败，考虑外部干预");
-                                println!("工作线程第一次成功");
+                                info!("工作线程第一次成功");
                                 // Print the data in hexdump format
                                 let bytes: Vec<u8> = data
                                     .iter()
@@ -166,33 +169,28 @@ async fn main() -> anyhow::Result<()> {
         tokio::select! {
             _ = rx => {
                 let (success, fail) = (*rx_success.borrow(), *rx_fail.borrow());
-                println!("成功次数: {}, 失败次数: {:?}", success, fail);
+                info!("成功次数: {}, 失败次数: {:?}", success, fail);
             }
             _ = handle() => {
-                println!("工作线程居然退出，考虑外部干预");
+                info!("工作线程居然退出，考虑外部干预");
             }
         };
-    });
-
-    println!("主进程PID: {}", std::process::id());
-    println!("主线程TID: {}", unsafe {
-        libc::syscall(libc::SYS_gettid)
     });
 
     let sig_int = tokio::signal::ctrl_c();
     // let mut sig_int = signal(SignalKind::interrupt())?;
 
-    println!("准备完成，等待Ctrl-C或超时退出...");
+    info!("准备完成，等待Ctrl-C或超时退出...");
 
     tokio::select! {
         _ = sig_int => {
-            println!("\nCtrl+c退出...");
+            info!("\nCtrl+c退出...");
             shutdown
                 .send(())
                 .expect("发送关闭信号失败，考虑子线程出错或外部干预，考虑sudo kill主线程");
         }
         _ = sleep(Duration::from_secs(1000)) => {
-            println!("\n超时退出...");
+            info!("\n超时退出...");
             shutdown
                 .send(())
                 .expect("发送关闭信号失败，考虑子线程出错或外部干预，考虑sudo kill主线程");
@@ -200,6 +198,8 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let _ = handle.await;
+
+    drop(pidfile);
 
     Ok(())
 }

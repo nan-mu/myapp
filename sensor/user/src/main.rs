@@ -1,6 +1,7 @@
 use clap::Parser;
 use config::TcpConfig;
 use log::{debug, info, warn};
+use pidfile::PidFile;
 use tcp::TcpHandler;
 use tokio::time::{sleep, Duration};
 
@@ -25,6 +26,9 @@ async fn main() -> anyhow::Result<()> {
 
     env_logger::init();
 
+    // 创建pid文件
+    let pidfile = PidFile::new("/var/run/sensor.pid")?;
+
     let config = TcpConfig::build(config, consts)?;
 
     match &config.target {
@@ -48,14 +52,14 @@ async fn main() -> anyhow::Result<()> {
     debug!("TCP客户端启动完成");
 
     let sig_int = tokio::signal::ctrl_c();
-    println!("准备完成，等待Ctrl-C或超时退出...");
+    info!("准备完成，等待Ctrl-C或超时退出...");
 
     tokio::select! {
         _ = sig_int => {
-            println!("\nCtrl+c退出...");
+            info!("\nCtrl+c退出...");
         }
         _ = sleep(Duration::from_secs(1000)) => {
-            println!("\n超时退出...");
+            info!("\n超时退出...");
         }
     }
 
@@ -64,6 +68,7 @@ async fn main() -> anyhow::Result<()> {
         warn!("发送TCP关闭信号失败: {:?}", e);
     }
 
-    println!("程序退出");
+    drop(pidfile);
+
     Ok(())
 }

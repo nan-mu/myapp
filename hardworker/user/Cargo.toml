@@ -13,10 +13,9 @@ env_logger = { workspace = true }
 libc = { workspace = true }
 log = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
-
-clap = { workspace = true, features = ["derive"] }
-
-mio = { version = "1", features = ["os-poll"]}
+clap = { workspace = true, features = ["derive", "std"] }
+mio = { workspace = true, features = ["os-poll"]}
+pidfile2 = { workspace = true }
 
 [build-dependencies]
 anyhow = { workspace = true }

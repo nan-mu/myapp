@@ -2,9 +2,7 @@ use anyhow::Context as _;
 use clap::Parser;
 use config::TcpConfig;
 use ebpf::EbpfBuilder;
-#[rustfmt::skip]
-use log::debug;
-use log::info;
+use log::{debug, info};
 use pidfile::PidFile;
 use tcp::TcpHandler;
 use tokio::time::{sleep, Duration};
