@@ -2,7 +2,14 @@ use anyhow::{anyhow, Context, Result};
 use log::debug;
 use procfs::Current;
 use serde::Deserialize;
-use std::{cmp::Ordering, fmt::Debug, fs, net::Ipv4Addr, path::Path, sync::Arc};
+use std::{
+    cmp::Ordering,
+    fmt::{Debug, Display},
+    fs,
+    net::Ipv4Addr,
+    path::Path,
+    sync::Arc,
+};
 
 mod consts {
     //! const.toml 中的常量配置
@@ -78,15 +85,36 @@ struct FileTcpConfig {
 
     /// 数据包大小，可选，默认使用const.toml中的mtu值
     pub size: Option<usize>,
-
     // /// 发送频率(Hz)，必须指定
     // pub freq: f64,
+    /// 发包目标角色
+    pub target: Option<Role>,
+}
+
+/// 系统中的角色类型
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Role {
+    Logger,
+    Hardworker,
+    Sensor,
+}
+
+impl Display for Role {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Role::Logger => write!(f, "logger"),
+            Role::Hardworker => write!(f, "hardworker"),
+            Role::Sensor => write!(f, "sensor"),
+        }
+    }
 }
 
 /// 最终合并的TCP配置
 #[derive(Debug, Clone)]
 pub struct TcpConfig {
     pub ifname: Arc<str>,
+    pub target: Role,
     pub logger_ip: Ipv4Addr,
     pub port: u16,
     pub tos: u8,
@@ -100,7 +128,7 @@ impl TryFrom<(FileConfig, consts::ConstConfig)> for TcpConfig {
         let tcp_config = file_config
             .tcp
             .ok_or_else(|| anyhow::anyhow!("TCP配置缺失"))?;
-
+        let target = tcp_config.target.unwrap_or(Role::Hardworker);
         let logger_ip = tcp_config.ip.unwrap_or(const_config.ip.logger);
         let port = tcp_config.port.unwrap_or(const_config.mark.port);
         let tos = tcp_config.tos.unwrap_or(const_config.mark.tos);
@@ -139,6 +167,7 @@ impl TryFrom<(FileConfig, consts::ConstConfig)> for TcpConfig {
 
         Ok(TcpConfig {
             ifname: Arc::from(ifname),
+            target,
             logger_ip,
             port,
             tos,

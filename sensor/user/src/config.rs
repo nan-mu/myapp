@@ -1,13 +1,15 @@
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use log::debug;
-use serde::Deserialize;
-use std::cmp::Ordering;
-use std::fmt::Debug;
-use std::fs;
-use std::net::Ipv4Addr;
-use std::path::Path;
-use std::sync::Arc;
 use procfs::Current;
+use serde::Deserialize;
+use std::{
+    cmp::Ordering,
+    fmt::{Debug, Display},
+    fs,
+    net::Ipv4Addr,
+    path::Path,
+    sync::Arc,
+};
 
 mod consts {
     //! const.toml 中的常量配置
@@ -41,9 +43,9 @@ mod consts {
     /// IP地址配置
     #[derive(Debug, Clone, Deserialize)]
     pub struct IpAddresses {
-        // pub logger: Ipv4Addr,
+        pub logger: Ipv4Addr,
         pub hardworker: Ipv4Addr,
-        // pub sensor: Ipv4Addr,
+        pub sensor: Ipv4Addr,
     }
 
     /// 数据包标记配置
@@ -86,6 +88,28 @@ struct FileTcpConfig {
 
     /// 发送频率(Hz)，必须指定
     pub freq: f64,
+
+    /// 发包目标角色
+    pub target: Option<Role>,
+}
+
+/// 系统中的角色类型
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Role {
+    Logger,
+    Hardworker,
+    Sensor,
+}
+
+impl Display for Role {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Role::Logger => write!(f, "logger"),
+            Role::Hardworker => write!(f, "hardworker"),
+            Role::Sensor => write!(f, "sensor"),
+        }
+    }
 }
 
 /// 最终合并的TCP配置
@@ -93,6 +117,7 @@ struct FileTcpConfig {
 pub struct TcpConfig {
     pub ifname: Arc<str>,
     pub target_ip: Ipv4Addr,
+    pub target: Role,
     pub port: u16,
     pub tos: u8,
     pub size: usize,
@@ -106,7 +131,13 @@ impl TryFrom<(FileConfig, consts::ConstConfig)> for TcpConfig {
             .tcp
             .ok_or_else(|| anyhow::anyhow!("TCP配置缺失"))?;
 
-        let target_ip = tcp_config.ip.unwrap_or(const_config.ip.hardworker);
+        let target = tcp_config.target.unwrap_or(Role::Hardworker);
+        let target_ip = tcp_config.ip.unwrap_or(match target {
+            Role::Logger => const_config.ip.logger,
+            Role::Hardworker => const_config.ip.hardworker,
+            Role::Sensor => const_config.ip.sensor,
+        });
+        debug!("目标角色: {target:?}, 目标IP: {target_ip}");
         let port = tcp_config.port.unwrap_or(const_config.mark.port);
         let tos = tcp_config.tos.unwrap_or(const_config.mark.tos);
         let size = tcp_config.size.unwrap_or(const_config.data.mtu);
@@ -144,6 +175,7 @@ impl TryFrom<(FileConfig, consts::ConstConfig)> for TcpConfig {
 
         Ok(TcpConfig {
             ifname: Arc::from(ifname),
+            target,
             target_ip,
             port,
             tos,

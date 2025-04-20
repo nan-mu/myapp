@@ -18,6 +18,10 @@ rewrite_const = false
 # ip = "192.168.1.79"
 # port = 12345
 
+# 调试用目标设备。sensor将读取该值并发送到值指定的设备。
+# 希望测量非ebpf加速时性能时使用。一般设置为logger
+target = "logger"
+
 # 调试用TOS值（支持十六进制格式），不指定时将从const.toml读取hardworker的值
 # tos = "0x6c"
 

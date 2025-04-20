@@ -34,10 +34,18 @@ async fn main() -> anyhow::Result<()> {
 
     let config = TcpConfig::build(config, consts)?;
 
-    let _ebpf = EbpfBuilder::build(config.ifname.clone())
-        .cancel_memlock()?
-        .build_xdp()?;
-    debug!("ebpf构建完成");
+    match &config.target {
+        config::Role::Hardworker => {
+            info!("本机角色为 logger 根据配置文件目标角色缺省或为 Hardworker。ebpf将被构建");
+            let _ebpf = EbpfBuilder::build(config.ifname.clone())
+                .cancel_memlock()?
+                .build_xdp()?;
+            debug!("ebpf构建完成");
+        }
+        target => {
+            info!("本机角色为 logger 根据配置文件目标角色为 {target}。ebpf将不会被构建");
+        }
+    }
 
     let tcp_server = TcpHandler::from(config);
     let tcp_shutdown_tx = tcp_server.get_signal();
