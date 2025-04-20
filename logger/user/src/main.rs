@@ -34,18 +34,20 @@ async fn main() -> anyhow::Result<()> {
     let config = TcpConfig::build(config, consts)?;
     let timeout = config.timeout;
 
-    match &config.target {
+    let ebpf = match &config.target {
         config::Role::Hardworker => {
             info!("本机角色为 logger 根据配置文件目标角色缺省或为 Hardworker。ebpf将被构建");
-            let _ebpf = EbpfBuilder::build(config.ifname.clone())
+            let ebpf = EbpfBuilder::build(config.ifname.clone())
                 .cancel_memlock()?
                 .build_xdp()?;
             debug!("ebpf构建完成");
+            Some(ebpf)
         }
         target => {
             info!("本机角色为 logger 根据配置文件目标角色为 {target}。ebpf将不会被构建");
+            None
         }
-    }
+    };
 
     let tcp_server = TcpHandler::from(config);
     let tcp_shutdown_tx = tcp_server.get_signal();
@@ -69,6 +71,7 @@ async fn main() -> anyhow::Result<()> {
         .await
         .context("发送TCP关闭信号失败")?;
 
+    drop(ebpf);
     drop(pidfile);
 
     Ok(())
