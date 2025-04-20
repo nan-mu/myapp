@@ -8,7 +8,7 @@ use std::{
     fs,
     net::Ipv4Addr,
     path::Path,
-    sync::Arc,
+    sync::Arc, time::Duration,
 };
 
 mod consts {
@@ -65,6 +65,7 @@ mod consts {
 /// config.toml 中的用户配置
 #[derive(Debug, Clone, Deserialize)]
 struct FileConfig {
+    pub timeout: Option<u64>,
     pub tcp: Option<FileTcpConfig>,
 }
 
@@ -122,6 +123,7 @@ pub struct TcpConfig {
     pub tos: u8,
     pub size: usize,
     pub freq: f64,
+    pub timeout: Option<Duration>,
 }
 
 impl TryFrom<(FileConfig, consts::ConstConfig)> for TcpConfig {
@@ -142,6 +144,7 @@ impl TryFrom<(FileConfig, consts::ConstConfig)> for TcpConfig {
         let tos = tcp_config.tos.unwrap_or(const_config.mark.tos);
         let size = tcp_config.size.unwrap_or(const_config.data.mtu);
         let freq = tcp_config.freq;
+        let timeout = file_config.timeout.map(Duration::from_secs);
         let ifname = match tcp_config.ifname {
             Some(ifname) => ifname,
             None => {
@@ -181,6 +184,7 @@ impl TryFrom<(FileConfig, consts::ConstConfig)> for TcpConfig {
             tos,
             size,
             freq,
+            timeout,
         })
     }
 }

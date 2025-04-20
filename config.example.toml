@@ -1,3 +1,6 @@
+# 程序超时时间(秒)，不指定时将关闭超时退出
+# timeout = 1000
+
 [daemon]
 # true时将尝试连接其他设备得到网络拓扑并指示所有设备编译ebpf程序。
 explore = false

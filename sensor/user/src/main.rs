@@ -1,15 +1,17 @@
+use anyhow::Context;
 use clap::Parser;
-use config::TcpConfig;
-use log::{debug, info, warn};
+use log::{debug, info};
 use pidfile::PidFile;
-use tcp::TcpHandler;
+use std::future::pending;
 use tokio::time::{sleep, Duration};
 
 mod config;
 mod ebpf;
 mod tcp;
 
+use config::TcpConfig;
 use ebpf::EbpfBuilder;
+use tcp::TcpHandler;
 
 #[derive(Debug, Parser)]
 struct Opt {
@@ -30,6 +32,7 @@ async fn main() -> anyhow::Result<()> {
     let pidfile = PidFile::new("/var/run/sensor.pid")?;
 
     let config = TcpConfig::build(config, consts)?;
+    let timeout = config.timeout;
 
     match &config.target {
         config::Role::Hardworker => {
@@ -58,17 +61,24 @@ async fn main() -> anyhow::Result<()> {
         _ = sig_int => {
             info!("\nCtrl+c退出...");
         }
-        _ = sleep(Duration::from_secs(1000)) => {
+        _ = sleep_or_pending(timeout) => {
             info!("\n超时退出...");
         }
     }
 
-    // 发送关闭信号给TCP客户端
-    if let Err(e) = tcp_shutdown_tx.send(()).await {
-        warn!("发送TCP关闭信号失败: {:?}", e);
-    }
+    tcp_shutdown_tx
+        .send(())
+        .await
+        .context("发送TCP关闭信号失败")?;
 
     drop(pidfile);
 
     Ok(())
+}
+
+async fn sleep_or_pending(timeout: Option<Duration>) {
+    match timeout {
+        Some(timeout) => sleep(timeout).await,
+        None => pending().await,
+    }
 }

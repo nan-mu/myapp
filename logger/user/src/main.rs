@@ -1,17 +1,18 @@
-use anyhow::Context as _;
+use anyhow::Context;
 use clap::Parser;
-use config::TcpConfig;
-use ebpf::EbpfBuilder;
 use log::{debug, info};
 use pidfile::PidFile;
-use tcp::TcpHandler;
+use std::future::pending;
 use tokio::time::{sleep, Duration};
 
 mod config;
 mod ebpf;
 mod tcp;
 
-// mod fd_handle;
+use config::TcpConfig;
+use ebpf::EbpfBuilder;
+use tcp::TcpHandler;
+
 #[derive(Debug, Parser)]
 struct Opt {
     #[clap(short, long, default_value = "../config.toml")]
@@ -31,6 +32,7 @@ async fn main() -> anyhow::Result<()> {
     let pidfile = PidFile::new("/var/run/logger.pid")?;
 
     let config = TcpConfig::build(config, consts)?;
+    let timeout = config.timeout;
 
     match &config.target {
         config::Role::Hardworker => {
@@ -56,21 +58,25 @@ async fn main() -> anyhow::Result<()> {
     tokio::select! {
         _ = sig_int => {
             info!("\nCtrl+c退出...");
-            tcp_shutdown_tx
-                .send(())
-                .await
-                .context("发送TCP关闭信号失败")?;
         }
-        _ = sleep(Duration::from_secs(1000)) => {
+        _ = sleep_or_pending(timeout) => {
             info!("\n超时退出...");
-            tcp_shutdown_tx
-                .send(())
-                .await
-                .context("发送TCP关闭信号失败")?;
         }
     }
+
+    tcp_shutdown_tx
+        .send(())
+        .await
+        .context("发送TCP关闭信号失败")?;
 
     drop(pidfile);
 
     Ok(())
+}
+
+async fn sleep_or_pending(timeout: Option<Duration>) {
+    match timeout {
+        Some(timeout) => sleep(timeout).await,
+        None => pending().await,
+    }
 }
