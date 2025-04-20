@@ -38,10 +38,6 @@ fn try_logger(ctx: XdpContext) -> Result<u32, ()> {
         return Ok(xdp_action::XDP_PASS);
     }
 
-    debug!(&ctx, "get TCP pack with checksum {}", unsafe {
-        (*tcphdr).check
-    });
-
     let ethhdr: *const EthHdr = ptr_at(&ctx, 0)?;
     unsafe {
         (*(ethhdr as *mut EthHdr)).src_addr = MAC.sensor;
@@ -49,9 +45,27 @@ fn try_logger(ctx: XdpContext) -> Result<u32, ()> {
 
     debug!(
         &ctx,
-        "pack reach XDP_PASS with TCP checksum 0x{:x}",
-        unsafe { (*tcphdr).check }
+        "pack reach XDP_PASS with src: {}, dst: {}, {} pack, csum: 0x{:x}",
+        unsafe { (*tcphdr).source.swap_bytes() },
+        unsafe { (*tcphdr).dest.swap_bytes() },
+        if unsafe { (*tcphdr).fin() } == 1 {
+            "FIN"
+        } else if unsafe { (*tcphdr).syn() } == 1 {
+            "SYN"
+        } else if unsafe { (*tcphdr).rst() } == 1 {
+            "RST"
+        } else if unsafe { (*tcphdr).psh() } == 1 {
+            "PSH"
+        } else if unsafe { (*tcphdr).ack() } == 1 {
+            "ACK"
+        } else if unsafe { (*tcphdr).urg() } == 1 {
+            "URG"
+        } else {
+            "ERR"
+        },
+        unsafe { (*tcphdr).check.swap_bytes() }
     );
+
     Ok(xdp_action::XDP_PASS)
 }
 

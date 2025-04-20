@@ -17,21 +17,10 @@ pub fn sensor(ctx: XdpContext) -> u32 {
 }
 
 fn try_sensor(ctx: XdpContext) -> Result<u32, ()> {
-    // const TARGET_TOS: u8 = MARK.tos;
-
-    // // 编译时断言
-    // // 确保TOS字段的最后一位为0符合TOS字段要求
-    // // 确保前三位不为001和000避免与已定义TOS类型冲突
-    // // tos字段前三位弃用，所以将标识为0x011xxxxx应该不会和其他包冲突
-    // const _: [(); 1] = [(); (TARGET_TOS & 0b00000001 == 0b00000000) as usize];
-    // const _: [(); 1] = [(); (TARGET_TOS & 0b11100000 != 0b00000000) as usize];
-    // const _: [(); 1] = [(); (TARGET_TOS & 0b11100000 != 0b00100000) as usize];
-
     let ipv4hdr: *const Ipv4Hdr = ptr_at(&ctx, EthHdr::LEN)?;
-    // match unsafe { (*ipv4hdr).tos } {
-    //     TARGET_TOS => {}
-    //     _ => return Ok(xdp_action::XDP_PASS),
-    // }
+    if unsafe { (*ipv4hdr).src_addr() } != IP.logger {
+        return Ok(xdp_action::XDP_PASS);
+    }
 
     let tcphdr: *const TcpHdr = ptr_at(&ctx, EthHdr::LEN + Ipv4Hdr::LEN)?;
     if unsafe { (*tcphdr).source } != MARK.port.swap_bytes() {
@@ -62,9 +51,27 @@ fn try_sensor(ctx: XdpContext) -> Result<u32, ()> {
 
     debug!(
         &ctx,
-        "pack reach XDP_PASS with TCP checksum: 0x{:x}",
+        "pack reach XDP_PASS with src: {}, dst: {}, {} pack, csum: 0x{:x}",
+        unsafe { (*tcphdr).source.swap_bytes() },
+        unsafe { (*tcphdr).dest.swap_bytes() },
+        if unsafe { (*tcphdr).fin() } == 1 {
+            "FIN"
+        } else if unsafe { (*tcphdr).syn() } == 1 {
+            "SYN"
+        } else if unsafe { (*tcphdr).rst() } == 1 {
+            "RST"
+        } else if unsafe { (*tcphdr).psh() } == 1 {
+            "PSH"
+        } else if unsafe { (*tcphdr).ack() } == 1 {
+            "ACK"
+        } else if unsafe { (*tcphdr).urg() } == 1 {
+            "URG"
+        } else {
+            "ERR"
+        },
         unsafe { (*tcphdr).check.swap_bytes() }
     );
+
     Ok(xdp_action::XDP_PASS)
 }
 

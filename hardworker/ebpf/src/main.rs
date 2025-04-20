@@ -44,42 +44,17 @@ fn try_hardworker(ctx: XdpContext) -> Result<u32, ()> {
     let ipv4hdr: *const Ipv4Hdr = ptr_at(&ctx, EthHdr::LEN)?;
     match unsafe { (*ipv4hdr).tos } {
         TARGET_TOS => {
-            debug!(&ctx, "hit tos");
+            // debug!(&ctx, "hit tos");
         }
         _ => return Ok(xdp_action::XDP_PASS),
     }
 
     // 我发现光一个tos还是不够，加一个tcp端口号
     let tcphdr: *const TcpHdr = ptr_at(&ctx, EthHdr::LEN + Ipv4Hdr::LEN)?;
-    debug!(
-        &ctx,
-        "tcp src port: {}, tcp dst port: {}",
-        unsafe { (*tcphdr).source.swap_bytes() },
-        unsafe { (*tcphdr).dest.swap_bytes() }
-    );
+
     if unsafe { (*tcphdr).dest } != MARK.port.swap_bytes() {
         return Ok(xdp_action::XDP_PASS);
     }
-
-    debug!(
-        &ctx,
-        "get TCP {} pack",
-        if unsafe { (*tcphdr).fin() } == 1 {
-            "FIN"
-        } else if unsafe { (*tcphdr).syn() } == 1 {
-            "SYN"
-        } else if unsafe { (*tcphdr).rst() } == 1 {
-            "RST"
-        } else if unsafe { (*tcphdr).psh() } == 1 {
-            "PSH"
-        } else if unsafe { (*tcphdr).ack() } == 1 {
-            "ACK"
-        } else if unsafe { (*tcphdr).urg() } == 1 {
-            "URG"
-        } else {
-            "ERR"
-        }
-    );
 
     if unsafe { (*tcphdr).psh() } == 1 {
         unsafe {
@@ -120,9 +95,27 @@ fn try_hardworker(ctx: XdpContext) -> Result<u32, ()> {
 
     debug!(
         &ctx,
-        "pack reach XDP_TX with TCP checksum: 0x{:x}",
+        "pack reach XDP_TX with src: {}, dst: {}, {} pack, csum: 0x{:x}",
+        unsafe { (*tcphdr).source.swap_bytes() },
+        unsafe { (*tcphdr).dest.swap_bytes() },
+        if unsafe { (*tcphdr).fin() } == 1 {
+            "FIN"
+        } else if unsafe { (*tcphdr).syn() } == 1 {
+            "SYN"
+        } else if unsafe { (*tcphdr).rst() } == 1 {
+            "RST"
+        } else if unsafe { (*tcphdr).psh() } == 1 {
+            "PSH"
+        } else if unsafe { (*tcphdr).ack() } == 1 {
+            "ACK"
+        } else if unsafe { (*tcphdr).urg() } == 1 {
+            "URG"
+        } else {
+            "ERR"
+        },
         unsafe { (*tcphdr).check.swap_bytes() }
     );
+
     Ok(xdp_action::XDP_TX)
 }
 

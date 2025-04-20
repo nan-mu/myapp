@@ -163,7 +163,7 @@ impl TryFrom<(FileConfig, consts::ConstConfig)> for TcpConfig {
                         }
                     })
                     .ok_or(anyhow!("找不到对hardworker的路由, 检查目标ip或尝试手动填充config.toml的tcp.ifname字段"))?;
-                debug!("对ip: {ip} 找到路由: {}", best_router.iface);
+                debug!("对ip: {logger_ip} 找到路由: {}", best_router.iface);
                 best_router.iface.clone()
             }
         };

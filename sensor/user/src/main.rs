@@ -52,7 +52,6 @@ async fn main() -> anyhow::Result<()> {
 
     // 启动TCP客户端
     tcp_client.start().await?;
-    debug!("TCP客户端启动完成");
 
     let sig_int = tokio::signal::ctrl_c();
     info!("准备完成，等待Ctrl-C或超时退出...");
