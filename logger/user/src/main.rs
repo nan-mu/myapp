@@ -5,12 +5,13 @@ use ebpf::EbpfBuilder;
 #[rustfmt::skip]
 use log::debug;
 use log::info;
+use pidfile::PidFile;
 use tcp::TcpHandler;
 use tokio::time::{sleep, Duration};
 
-mod tcp;
 mod config;
 mod ebpf;
+mod tcp;
 
 // mod fd_handle;
 #[derive(Debug, Parser)]
@@ -27,6 +28,9 @@ async fn main() -> anyhow::Result<()> {
     let Opt { config, consts } = opt;
 
     env_logger::init();
+
+    // 创建pid文件
+    let pidfile = PidFile::new("/var/run/logger.pid")?;
 
     let config = TcpConfig::build(config, consts)?;
 
@@ -59,6 +63,8 @@ async fn main() -> anyhow::Result<()> {
                 .context("发送TCP关闭信号失败")?;
         }
     }
+
+    drop(pidfile);
 
     Ok(())
 }
