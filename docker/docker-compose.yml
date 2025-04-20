@@ -32,10 +32,20 @@ services:
       - HOST_VAR=/hostfs/var
       - HOST_RUN=/hostfs/run
       - HOST_MOUNT_PREFIX=/hostfs
+      - HOST_HOSTNAME=${HOSTNAMEFORTELEGRAM}
     secrets:
       - influxdb2_admin_token
     networks:
       - measure
+    healthcheck:
+      test: >
+        sh -c 'test -n "$$HOST_HOSTNAME" &&
+               ! grep -q "E!" /var/log/telegraf/telegraf.log'
+      interval: 180s
+      timeout: 10s
+      retries: 3
+      start_period: 1m  # 初始缓冲期
+
 
 
 volumes:
