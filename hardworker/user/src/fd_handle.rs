@@ -65,26 +65,21 @@ impl FdHandleBuilder {
 
         task::spawn_blocking(move || {
             let success = success.clone();
+            if let Err(e) = poll.poll(&mut events, Some(Duration::from_secs(30))){
+                debug!("ringbuf poll失败: {}", e);
+                return;
+            };
             loop {
-                match poll.poll(&mut events, Some(Duration::from_secs(30))){
-                    Ok(_) => {
-                        if let Ok(()) = rx.try_recv() {
-                            break;
-                        }
-                    }
-                    Err(e) => {
-                        debug!("ringbuf等待超时, 接收线程退出: {}", e);
-                        break;
-                    }
-                };
-
                 for event in &events {
                     if event.token() == FD {
                         if let Some(item) = ringbuf.next(){
                             if item.len() == std::mem::size_of::<[u8; 1200]>() {
                                 success
                                     .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                            }else {
+                                debug!("ringbuf数据长度错误: {}", item.len());
                             }
+                            drop(item)
                         };
 
                         // 需要时重新注册事件（EPOLLONESHOT模式下必须）
@@ -95,10 +90,20 @@ impl FdHandleBuilder {
                     }
                 }
 
-                // 检查是否期望停止
                 if let Ok(()) = rx.try_recv() {
                     break;
                 }
+                match poll.poll(&mut events, Some(Duration::from_secs(5))) {
+                    Ok(_) => {
+                        if let Ok(()) = rx.try_recv() {
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        debug!("ringbuf等待超时, 接收线程退出: {}", e);
+                        break;
+                    }
+                };
             }
         });
         
