@@ -58,7 +58,8 @@ mod consts {
     /// 数据负载配置
     #[derive(Debug, Clone, Deserialize)]
     pub struct DataConfig {
-        pub mtu: usize,
+        // pub mtu: usize,
+        pub size: usize,
     }
 }
 
@@ -117,7 +118,7 @@ impl Display for Role {
 #[derive(Debug, Clone)]
 pub struct TcpConfig {
     pub ifname: Arc<str>,
-    pub target_ip: Ipv4Addr,
+    pub host_ip: Ipv4Addr,
     pub target: Role,
     pub port: u16,
     pub tos: u8,
@@ -134,22 +135,22 @@ impl TryFrom<(FileConfig, consts::ConstConfig)> for TcpConfig {
             .ok_or_else(|| anyhow::anyhow!("TCP配置缺失"))?;
 
         let target = tcp_config.target.unwrap_or(Role::Hardworker);
-        let target_ip = tcp_config.ip.unwrap_or(match target {
+        let host_ip = tcp_config.ip.unwrap_or(match target {
             Role::Logger => const_config.ip.logger,
             Role::Hardworker => const_config.ip.hardworker,
             Role::Sensor => const_config.ip.sensor,
         });
-        debug!("目标角色: {target:?}, 目标IP: {target_ip}");
+        debug!("目标角色: {target:?}, 目标IP: {host_ip}");
         let port = tcp_config.port.unwrap_or(const_config.mark.port);
         let tos = tcp_config.tos.unwrap_or(const_config.mark.tos);
-        let size = tcp_config.size.unwrap_or(const_config.data.mtu);
+        let size = tcp_config.size.unwrap_or(const_config.data.size);
         let freq = tcp_config.freq;
         let timeout = file_config.timeout.map(Duration::from_secs);
         let ifname = match tcp_config.ifname {
             Some(ifname) => ifname,
             None => {
                 let routers = procfs::net::RouteEntries::current()?;
-                let ip = target_ip.to_bits();
+                let ip = host_ip.to_bits();
                 let best_router = routers
                     .0
                     .iter()
@@ -171,7 +172,7 @@ impl TryFrom<(FileConfig, consts::ConstConfig)> for TcpConfig {
                         }
                     })
                     .ok_or(anyhow!("找不到对hardworker的路由, 检查目标ip或尝试手动填充config.toml的tcp.ifname字段"))?;
-                debug!("对ip: {target_ip} 找到路由: {}", best_router.iface);
+                debug!("对ip: {host_ip} 找到路由: {}", best_router.iface);
                 best_router.iface.clone()
             }
         };
@@ -179,7 +180,7 @@ impl TryFrom<(FileConfig, consts::ConstConfig)> for TcpConfig {
         Ok(TcpConfig {
             ifname: Arc::from(ifname),
             target,
-            target_ip,
+            host_ip,
             port,
             tos,
             size,

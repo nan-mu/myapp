@@ -13,8 +13,6 @@ use aya_ebpf::{
 use aya_log_ebpf::{debug, error};
 use network_types::{eth::EthHdr, ip::Ipv4Hdr, tcp::TcpHdr};
 
-// mod csum;
-
 #[xdp]
 pub fn hardworker(ctx: XdpContext) -> u32 {
     match try_hardworker(ctx) {
@@ -24,11 +22,12 @@ pub fn hardworker(ctx: XdpContext) -> u32 {
 }
 
 // 计划传输几个u64大小
-const DATA_SIZE: usize = DATA.load_u64_count * 8;
-const _: [(); 1] = [(); ((DATA_SIZE + Ipv4Hdr::LEN + TcpHdr::LEN) <= DATA.mtu) as usize]; // 保守负载大小
+const RING_BUF_SIZE: u32 = 16 * (DATA.size) as u32;
+const _: [(); 1] = [(); ((DATA.size + Ipv4Hdr::LEN + TcpHdr::LEN) <= DATA.mtu) as usize]; // 保守负载大小
+const _: [(); 1] = [(); (RING_BUF_SIZE as usize <= 256 * 1024) as usize]; // 保守ringbuf大小
 
 #[map(name = "TARGET_MAP")]
-static mut TARGET_MAP: RingBuf = RingBuf::with_byte_size((DATA_SIZE) as u32, 0);
+static mut TARGET_MAP: RingBuf = RingBuf::with_byte_size(RING_BUF_SIZE, 0);
 
 fn try_hardworker(ctx: XdpContext) -> Result<u32, ()> {
     const TARGET_TOS: u8 = MARK.tos;
@@ -59,16 +58,18 @@ fn try_hardworker(ctx: XdpContext) -> Result<u32, ()> {
     if unsafe { (*tcphdr).psh() } == 1 {
         unsafe {
             #[allow(static_mut_refs)]
-            let reserved = TARGET_MAP.reserve::<[u64; DATA.load_u64_count]>(0);
+            let reserved = TARGET_MAP.reserve::<[u8; DATA.mtu]>(0);
             match reserved {
                 Some(mut entry) => {
                     // 拷贝DATA_SIZE字节数据到ring_buf
                     if let Ok(data) = ptr_at(&ctx, EthHdr::LEN + Ipv4Hdr::LEN) {
                         entry.write(*data);
+                    }else {
+                        error!(&ctx, "ptr_at load data 失败");
                     };
                     entry.submit(0);
                 }
-                None => error!(&ctx, "ring_buf full"),
+                None => error!(&ctx, "ring_buf 满！"),
             }
         }
     }

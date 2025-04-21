@@ -14,9 +14,12 @@ libc = { workspace = true }
 log = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 clap = { workspace = true, features = ["derive", "std"] }
-mio = { workspace = true, features = ["os-poll"]}
+mio = { workspace = true, features = ["os-poll"] }
 pidfile2 = { workspace = true }
 nix = { workspace = true, features = ["fs"] }
+procfs = { workspace = true, features = ["serde"] }
+serde = { workspace = true, features = ["derive"] }
+toml = { workspace = true, features = ["parse"] }
 
 [build-dependencies]
 anyhow = { workspace = true }
@@ -34,10 +37,6 @@ aya-build = { workspace = true }
 # workflows with stable cargo; stable cargo outright refuses to load manifests that use unstable
 # features.
 ebpf = { path = "../ebpf" }
-
-const-gen = { workspace = true, features = ["std", "derive", "net"]}
-toml = { workspace = true , features = ["parse"] }
-serde = { workspace = true, features = ["derive"] }
 
 [[bin]]
 name = "hardworker"

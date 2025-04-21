@@ -40,13 +40,13 @@ impl TcpHandler {
         // 太奇怪了tos用32位。rust代码里好像也没溢出检查啊？
         socket.set_tos(self.config.tos as u32)?;
         let mut socket = socket
-            .connect((self.config.target_ip, self.config.port).into())
+            .connect((self.config.host_ip, self.config.port).into())
             .await?;
         let period = Duration::from_millis((1000.0 / self.config.freq) as u64);
         let mut interval = interval(period);
         info!(
             "TCP连接成功, 目标IP: {}, 端口: {}, 间隔: {interval:?}. 开始传输数据",
-            self.config.target_ip, self.config.port
+            self.config.host_ip, self.config.port
         );
         let mut shutdown = self.shutdown;
 

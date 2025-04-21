@@ -42,7 +42,7 @@ impl TcpHandler {
         // 太奇怪了tos用32位。rust代码里好像也没溢出检查啊？
         socket.set_tos(self.config.tos as u32)?;
         socket.set_reuseaddr(true)?;
-        socket.bind((self.config.logger_ip, self.config.port).into())?;
+        socket.bind((self.config.host_ip, self.config.port).into())?;
 
         // 连接池
         const MAX_CONNECTIONS: usize = 16;

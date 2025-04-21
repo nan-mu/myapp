@@ -56,13 +56,13 @@ impl EbpfBuilder {
 }
 
 impl EbpfHandle {
-    pub fn build_ringbuf_fd(&mut self, name: Arc<str>) -> Result<FdHandleBuilder> {
+    pub fn build_ringbuf_fd(&mut self, name: Arc<str>, size: usize) -> Result<FdHandleBuilder> {
         let map = self
             .ebpf
             .take_map(name.as_ref())
             .context("找不到Map, 考虑ebpf程序未正常加载")?;
         let ringbuf = RingBuf::try_from(map)?;
-        FdHandleBuilder::new(ringbuf)
+        FdHandleBuilder::new(ringbuf, size)
     }
 }
 

@@ -4,7 +4,7 @@ use procfs::Current;
 use serde::Deserialize;
 use std::{
     cmp::Ordering,
-    fmt::{Debug, Display},
+    fmt::Debug,
     fs,
     net::Ipv4Addr,
     path::Path,
@@ -20,7 +20,7 @@ mod consts {
     pub struct ConstConfig {
         // pub mac: MacAddresses,
         pub ip: IpAddresses,
-        pub mark: MarkConfig,
+        // pub mark: MarkConfig,
         pub data: DataConfig,
     }
 
@@ -43,17 +43,17 @@ mod consts {
     /// IP地址配置
     #[derive(Debug, Clone, Deserialize)]
     pub struct IpAddresses {
-        pub logger: Ipv4Addr,
-        // pub hardworker: Ipv4Addr,
+        // pub logger: Ipv4Addr,
+        pub hardworker: Ipv4Addr,
         // pub sensor: Ipv4Addr,
     }
 
-    /// 数据包标记配置
-    #[derive(Debug, Clone, Deserialize)]
-    pub struct MarkConfig {
-        pub tos: u8,
-        pub port: u16,
-    }
+    // /// 数据包标记配置
+    // #[derive(Debug, Clone, Deserialize)]
+    // pub struct MarkConfig {
+    //     pub tos: u8,
+    //     pub port: u16,
+    // }
 
     /// 数据负载配置
     #[derive(Debug, Clone, Deserialize)]
@@ -79,62 +79,62 @@ struct FileTcpConfig {
     /// 目标IP地址，可选，默认使用const.toml中的hardworker值
     pub ip: Option<Ipv4Addr>,
 
-    /// 目标端口，可选，默认使用const.toml中的port值
-    pub port: Option<u16>,
+    // /// 目标端口，可选，默认使用const.toml中的port值
+    // pub port: Option<u16>,
 
-    /// TOS值，可选，默认使用const.toml中的tos值
-    pub tos: Option<u8>,
+    // /// TOS值，可选，默认使用const.toml中的tos值
+    // pub tos: Option<u8>,
 
     /// 数据包大小，可选，默认使用const.toml中的mtu值
     pub size: Option<usize>,
     // /// 发送频率(Hz)，必须指定
     // pub freq: f64,
-    /// 发包目标角色
-    pub target: Option<Role>,
+    // /// 发包目标角色
+    // pub target: Option<Role>,
 }
 
-/// 系统中的角色类型
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Role {
-    Logger,
-    Hardworker,
-    Sensor,
-}
+// /// 系统中的角色类型
+// #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+// #[serde(rename_all = "lowercase")]
+// pub enum Role {
+//     Logger,
+//     Hardworker,
+//     Sensor,
+// }
 
-impl Display for Role {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Role::Logger => write!(f, "logger"),
-            Role::Hardworker => write!(f, "hardworker"),
-            Role::Sensor => write!(f, "sensor"),
-        }
-    }
-}
+// impl Display for Role {
+//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//         match self {
+//             Role::Logger => write!(f, "logger"),
+//             Role::Hardworker => write!(f, "hardworker"),
+//             Role::Sensor => write!(f, "sensor"),
+//         }
+//     }
+// }
 
-/// 最终合并的TCP配置
+/// 最终合并的配置
 #[derive(Debug, Clone)]
-pub struct TcpConfig {
+pub struct Config {
     pub ifname: Arc<str>,
-    pub target: Role,
-    pub host_ip: Ipv4Addr,
-    pub port: u16,
-    pub tos: u8,
+    // pub target: Role,
+    // pub host_ip: Ipv4Addr,
+    // pub port: u16,
+    // pub tos: u8,
     pub size: usize,
     pub timeout: Option<Duration>,
     // pub freq: f64,
 }
 
-impl TryFrom<(FileConfig, consts::ConstConfig)> for TcpConfig {
+impl TryFrom<(FileConfig, consts::ConstConfig)> for Config {
     type Error = anyhow::Error;
     fn try_from((file_config, const_config): (FileConfig, consts::ConstConfig)) -> Result<Self> {
         let tcp_config = file_config
             .tcp
-            .ok_or_else(|| anyhow::anyhow!("TCP配置缺失"))?;
-        let target = tcp_config.target.unwrap_or(Role::Hardworker);
-        let host_ip = tcp_config.ip.unwrap_or(const_config.ip.logger);
-        let port = tcp_config.port.unwrap_or(const_config.mark.port);
-        let tos = tcp_config.tos.unwrap_or(const_config.mark.tos);
+            .ok_or_else(|| anyhow::anyhow!("配置缺失"))?;
+        // let target = tcp_config.target.unwrap_or(Role::Hardworker);
+        let host_ip = tcp_config.ip.unwrap_or(const_config.ip.hardworker);
+        // let port = tcp_config.port.unwrap_or(const_config.mark.port);
+        // let tos = tcp_config.tos.unwrap_or(const_config.mark.tos);
         let size = tcp_config.size.unwrap_or(const_config.data.size);
         let timeout = file_config.timeout.map(Duration::from_secs);
         // let freq = tcp_config.freq;
@@ -169,12 +169,11 @@ impl TryFrom<(FileConfig, consts::ConstConfig)> for TcpConfig {
             }
         };
 
-        Ok(TcpConfig {
+        Ok(Config {
             ifname: Arc::from(ifname),
-            target,
-            host_ip,
-            port,
-            tos,
+            // host_ip,
+            // port,
+            // tos,
             size,
             timeout,
             // freq,
@@ -182,7 +181,7 @@ impl TryFrom<(FileConfig, consts::ConstConfig)> for TcpConfig {
     }
 }
 
-impl TcpConfig {
+impl Config {
     /// path -> FileConfig&&ConstConfig -> TcpConfig
     pub fn build<T: AsRef<Path> + Debug>(config_path: T, consts_path: T) -> Result<Self> {
         let config = fs::read_to_string(&config_path)
