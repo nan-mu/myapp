@@ -14,4 +14,4 @@ port = 12345
 
 [data]
 mtu = 1200
-load_u64_count = 128
+load_u64_count = 150

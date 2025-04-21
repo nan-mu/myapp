@@ -16,6 +16,7 @@ tokio = { workspace = true, features = ["full"] }
 clap = { workspace = true, features = ["derive", "std"] }
 mio = { workspace = true, features = ["os-poll"]}
 pidfile2 = { workspace = true }
+nix = { workspace = true, features = ["fs"] }
 
 [build-dependencies]
 anyhow = { workspace = true }
