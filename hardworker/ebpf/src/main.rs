@@ -58,7 +58,7 @@ fn try_hardworker(ctx: XdpContext) -> Result<u32, ()> {
     if unsafe { (*tcphdr).psh() } == 1 {
         unsafe {
             #[allow(static_mut_refs)]
-            let reserved = TARGET_MAP.reserve::<[u8; DATA.mtu]>(0);
+            let reserved = TARGET_MAP.reserve::<[u8; DATA.size]>(0);
             match reserved {
                 Some(mut entry) => {
                     // 拷贝DATA_SIZE字节数据到ring_buf

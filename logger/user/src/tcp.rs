@@ -104,7 +104,7 @@ async fn handle(
                     Ok(0) => {},
                     Ok(n) => {
                         if n > max_size {
-                            warn!("接收数据 {max_size} 字节，超过最大限制 {n} 字节");
+                            warn!("接收数据 {n} 字节，超过最大限制 {max_size} 字节");
                         }
                         data_counter.fetch_add(n, Ordering::Relaxed);
                         info!("收到 {n} 字节数据");
