@@ -2,7 +2,7 @@ use anyhow::Context;
 use clap::Parser;
 use log::{debug, info};
 use pidfile::PidFile;
-use std::future::pending;
+use std::{future::pending, sync::atomic::Ordering};
 use tokio::time::{sleep, Duration};
 
 mod config;
@@ -51,7 +51,7 @@ async fn main() -> anyhow::Result<()> {
 
     let tcp_server = TcpHandler::from(config);
     let tcp_shutdown_tx = tcp_server.get_signal();
-    tcp_server.start().await?;
+    let (success, fail) = tcp_server.start().await?;
 
     let sig_int = tokio::signal::ctrl_c();
 
@@ -70,6 +70,9 @@ async fn main() -> anyhow::Result<()> {
         .send(())
         .await
         .context("发送TCP关闭信号失败")?;
+
+    info!("成功连接: {}", success.load(Ordering::SeqCst));
+    info!("失败连接: {}", fail.load(Ordering::SeqCst));
 
     drop(ebpf);
     drop(pidfile);

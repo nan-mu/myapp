@@ -45,7 +45,7 @@ impl TcpHandler {
     }
 
     /// 启动TCP工作线程
-    pub async fn start(mut self) -> Result<()> {
+    pub async fn start(mut self) -> Result<(Arc<AtomicUsize>, Arc<AtomicUsize>)> {
         let mut listener = TcpListener::bind((self.config.host_ip, self.config.port).into())?;
         let fd = listener.as_fd();
 
@@ -59,6 +59,7 @@ impl TcpHandler {
         // 记录匹配数据长度成功和失败的次数
         let success = Arc::new(AtomicUsize::new(0));
         let fail = Arc::new(AtomicUsize::new(0));
+        let result = (success.clone(), fail.clone());
         // tcp会话计数
         let mut counter = 0;
         let mut sockets: HashMap<Token, TcpStream> = HashMap::new();
@@ -131,9 +132,10 @@ impl TcpHandler {
                         break;
                     }
                 };
+
             }
         });
 
-        Ok(())
+        Ok(result)
     }
 }
