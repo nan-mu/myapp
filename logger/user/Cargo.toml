@@ -14,10 +14,11 @@ libc = { workspace = true }
 log = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 clap = { workspace = true, features = ["derive", "std"] }
-mio = { workspace = true, features = ["os-poll"]}
+mio = { workspace = true, features = ["net", "os-poll"] }
 procfs = { workspace = true, features = ["serde"] }
 serde = { workspace = true, features = ["derive"] }
-toml = { workspace = true , features = ["parse"] }
+toml = { workspace = true, features = ["parse"] }
+nix = { workspace = true, features = ["socket", "fs", "net"] }
 pidfile2 = { workspace = true }
 
 [build-dependencies]

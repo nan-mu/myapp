@@ -58,7 +58,7 @@ mod consts {
     /// 数据负载配置
     #[derive(Debug, Clone, Deserialize)]
     pub struct DataConfig {
-        // pub mtu: usize,
+        pub mtu: usize,
         pub size: usize,
     }
 }
@@ -120,6 +120,7 @@ pub struct TcpConfig {
     pub host_ip: Ipv4Addr,
     pub port: u16,
     pub tos: u8,
+    pub mtu: usize,
     pub size: usize,
     pub timeout: Option<Duration>,
     // pub freq: f64,
@@ -135,6 +136,7 @@ impl TryFrom<(FileConfig, consts::ConstConfig)> for TcpConfig {
         let host_ip = tcp_config.ip.unwrap_or(const_config.ip.logger);
         let port = tcp_config.port.unwrap_or(const_config.mark.port);
         let tos = tcp_config.tos.unwrap_or(const_config.mark.tos);
+        let mtu = const_config.data.mtu;
         let size = tcp_config.size.unwrap_or(const_config.data.size);
         let timeout = file_config.timeout.map(Duration::from_secs);
         // let freq = tcp_config.freq;
@@ -175,6 +177,7 @@ impl TryFrom<(FileConfig, consts::ConstConfig)> for TcpConfig {
             host_ip,
             port,
             tos,
+            mtu,
             size,
             timeout,
             // freq,

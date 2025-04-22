@@ -1,16 +1,25 @@
-use anyhow::{bail, Result};
-use log::{info, warn};
-use std::sync::{
-    atomic::{AtomicUsize, Ordering},
-    Arc,
+use anyhow::{Context, Result};
+use log::debug;
+use mio::{
+    event::Source,
+    net::{TcpListener, TcpStream},
+    Interest, Poll, Token,
 };
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::{TcpSocket, TcpStream},
-    sync::{broadcast, mpsc},
+use nix::{
+    fcntl::{fcntl, FcntlArg, OFlag},
+    sys::socket::{setsockopt, sockopt::IpTos},
 };
+use std::{
+    collections::HashMap, io::Read, os::fd::{AsFd, AsRawFd}, sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    }, time::Duration, vec
+};
+use tokio::{sync::mpsc, task};
 
 use crate::config::TcpConfig;
+
+const SERVER: Token = Token(0);
 
 #[derive(Debug)]
 pub struct TcpHandler {
@@ -37,88 +46,94 @@ impl TcpHandler {
 
     /// 启动TCP工作线程
     pub async fn start(mut self) -> Result<()> {
-        // 初始化tcp客户端
-        let socket = TcpSocket::new_v4()?;
-        // 太奇怪了tos用32位。rust代码里好像也没溢出检查啊？
-        socket.set_tos(self.config.tos as u32)?;
-        socket.set_reuseaddr(true)?;
-        socket.bind((self.config.host_ip, self.config.port).into())?;
+        let mut listener = TcpListener::bind((self.config.host_ip, self.config.port).into())?;
+        let fd = listener.as_fd();
 
-        // 连接池
-        const MAX_CONNECTIONS: usize = 16;
-        let listener = socket.listen(MAX_CONNECTIONS as u32)?;
-        let (tx, _) = broadcast::channel(MAX_CONNECTIONS);
+        // 设置 tos
+        setsockopt(&fd, IpTos, &(self.config.tos as i32)).context("设置套接字tos失败")?;
 
-        let data_length = Arc::new(AtomicUsize::new(0));
+        // 设置非阻塞
+        let flags = OFlag::from_bits_truncate(fcntl(fd.as_raw_fd(), FcntlArg::F_GETFL).unwrap());
+        fcntl(fd.as_raw_fd(), FcntlArg::F_SETFL(flags | OFlag::O_NONBLOCK)).unwrap();
 
-        tokio::spawn(async move {
+        // 记录匹配数据长度成功和失败的次数
+        let success = Arc::new(AtomicUsize::new(0));
+        let fail = Arc::new(AtomicUsize::new(0));
+        // tcp会话计数
+        let mut counter = 0;
+        let mut sockets: HashMap<Token, TcpStream> = HashMap::new();
+        // 缓冲区
+        let mut buffer = vec![0; self.config.mtu];
+
+        let mut poll = Poll::new()?;
+        let mut events = mio::Events::with_capacity(1024);
+        poll.registry()
+            .register(&mut listener, SERVER, Interest::READABLE)?;
+
+        task::spawn_blocking(move || {
             loop {
-                tokio::select! {
-                    socket = listener.accept() => {
-                        match socket {
-                            Ok((mut socket, addr)) => {
-                                if tx.receiver_count() >= MAX_CONNECTIONS {
-                                    warn!("超过连接池大小, 关闭来自 {addr} 的连接");
-                                    socket.shutdown().await.unwrap_or_else(|e| {
-                                        warn!("关闭连接失败: {}", e);
-                                    });
-                                    continue;
-                                }else {
-                                    info!("TCP连接成功: {}", addr);
-                                    tokio::spawn(handle(socket, self.config.size, tx.subscribe(), data_length.clone()));
+                for event in events.iter() {
+                    match event.token() {
+                        SERVER => loop {
+                            // 连接建立分支
+                            match listener.accept() {
+                                Ok((mut socket, _)) => {
+                                    counter += 1;
+                                    let token = Token(counter);
+                                    socket
+                                        .register(poll.registry(), token, Interest::READABLE)
+                                        .unwrap();
+                                    sockets.insert(token, socket);
+                                }
+                                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
+                                Err(_) => break,
+                            }
+                        },
+                        token if event.is_readable() => {
+                            // 会话可读的分支
+                            loop {
+                                let read = sockets.get_mut(&token).unwrap().read(&mut buffer);
+                                match read {
+                                    Ok(0) => {
+                                        debug!("连接关闭");
+                                        sockets.remove(&token);
+                                        break;
+                                    }
+                                    Ok(n) => {
+                                        if n == self.config.size {
+                                            success.fetch_add(n, Ordering::SeqCst);
+                                        } else {
+                                            fail.fetch_add(n, Ordering::SeqCst);
+                                        }
+                                    }
+                                    Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                                        break
+                                    }
+                                    Err(_) => break,
                                 }
                             }
-                            Err(e) => {
-                                warn!("TCP连接失败: {}", e);
-                                continue;
-                            }
-                        };
-                    }
-                    _ = self.shutdown.recv() => {
-                        info!("TCP工作线程关闭");
-                        if let Err(e) = tx.send(()) {
-                            warn!("TCP工作线程关闭失败: {}", e);
                         }
-                        info!("共计收到 {} 字节数据", data_length.load(Ordering::SeqCst));
+                        _ => {}
+                    }
+                }
+
+                if let Ok(()) = self.shutdown.try_recv() {
+                    break;
+                }
+                match poll.poll(&mut events, Some(Duration::from_secs(5))) {
+                    Ok(_) => {
+                        if let Ok(()) = self.shutdown.try_recv() {
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        debug!("ringbuf等待超时, 接收线程退出: {}", e);
                         break;
                     }
-                }
+                };
             }
         });
+
         Ok(())
     }
-}
-
-async fn handle(
-    mut socket: TcpStream,
-    max_size: usize,
-    mut shutdown: broadcast::Receiver<()>,
-    data_counter: Arc<AtomicUsize>,
-) -> Result<()> {
-    let mut buf = vec![0; max_size * 2];
-    let begin = tokio::time::Instant::now();
-    loop {
-        tokio::select! {
-            readed = socket.read(&mut buf) => {
-                match readed {
-                    Ok(0) => {},
-                    Ok(n) => {
-                        if n > max_size {
-                            warn!("接收数据 {n} 字节，超过最大限制 {max_size} 字节");
-                        }
-                        data_counter.fetch_add(n, Ordering::Relaxed);
-                        info!("收到 {n} 字节数据");
-                    },
-                    Err(e) => {
-                        bail!("读取数据失败: {}", e);
-                    }
-                }
-            },
-            _ = shutdown.recv() => {
-                info!("连接将关闭, 共计工作 {:#?} 秒", begin.elapsed());
-                break;
-            }
-        }
-    }
-    Ok(())
 }
