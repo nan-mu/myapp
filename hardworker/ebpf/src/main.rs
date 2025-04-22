@@ -55,6 +55,94 @@ fn try_hardworker(ctx: XdpContext) -> Result<u32, ()> {
         return Ok(xdp_action::XDP_PASS);
     }
 
+    let psh = unsafe { (*tcphdr).psh() } == 1;
+    let ack = unsafe { (*tcphdr).ack() } == 1;
+
+    unsafe {
+        match (psh, ack) {
+            (true, true) => {
+                #[allow(static_mut_refs)]
+                let reserved = TARGET_MAP.reserve::<[u8; 600]>(0);
+                match reserved {
+                    Some(mut entry) => {
+                        // 拷贝DATA_SIZE字节数据到ring_buf
+                        if let Ok(data) = ptr_at(
+                            &ctx,
+                            EthHdr::LEN + Ipv4Hdr::LEN + ((*tcphdr).doff() * 4) as usize,
+                        ) {
+                            entry.write(*data);
+                        } else {
+                            let data_size = ctx.data_end()
+                                - ctx.data()
+                                - EthHdr::LEN
+                                - Ipv4Hdr::LEN
+                                - ((*tcphdr).doff() * 4) as usize;
+                            
+                            error!(&ctx, "ptr_at load data 失败, data 长度为 {}", data_size);
+                            if (*tcphdr).fin()  == 1 {
+                                error!(&ctx, "FIN");
+                            } else if (*tcphdr).syn() == 1 {
+                                error!(&ctx, "SYN");
+                            } else if (*tcphdr).rst() == 1 {
+                                error!(&ctx, "RST");
+                            } else if (*tcphdr).psh() == 1 {
+                                error!(&ctx, "PSH");
+                            } else if (*tcphdr).ack() == 1 {
+                                error!(&ctx, "ACK");
+                            } else if (*tcphdr).urg() == 1 {
+                                error!(&ctx, "URG");
+                            } else {
+                                error!(&ctx, "ERR");
+                            }
+                        };
+                        entry.submit(0);
+                    }
+                    None => error!(&ctx, "ring_buf 满！"),
+                }
+            }
+            (true, false) => {
+                #[allow(static_mut_refs)]
+                let reserved = TARGET_MAP.reserve::<[u8; DATA.size]>(0);
+                match reserved {
+                    Some(mut entry) => {
+                        // 拷贝DATA_SIZE字节数据到ring_buf
+                        if let Ok(data) = ptr_at(
+                            &ctx,
+                            EthHdr::LEN + Ipv4Hdr::LEN + ((*tcphdr).doff() * 4) as usize,
+                        ) {
+                            entry.write(*data);
+                        } else {
+                            let data_size = ctx.data_end()
+                                - ctx.data()
+                                - EthHdr::LEN
+                                - Ipv4Hdr::LEN
+                                - ((*tcphdr).doff() * 4) as usize;
+                            error!(&ctx, "ptr_at load data 失败, data 长度为 {}", data_size);
+                            if (*tcphdr).fin()  == 1 {
+                                error!(&ctx, "FIN");
+                            } else if (*tcphdr).syn() == 1 {
+                                error!(&ctx, "SYN");
+                            } else if (*tcphdr).rst() == 1 {
+                                error!(&ctx, "RST");
+                            } else if (*tcphdr).psh() == 1 {
+                                error!(&ctx, "PSH");
+                            } else if (*tcphdr).ack() == 1 {
+                                error!(&ctx, "ACK");
+                            } else if (*tcphdr).urg() == 1 {
+                                error!(&ctx, "URG");
+                            } else {
+                                error!(&ctx, "ERR");
+                            }
+                        };
+                        entry.submit(0);
+                    }
+                    None => error!(&ctx, "ring_buf 满！"),
+                }
+            }
+            _ => {}
+        }
+    }
+
     if unsafe { (*tcphdr).psh() } == 1 {
         unsafe {
             #[allow(static_mut_refs)]
@@ -62,14 +150,24 @@ fn try_hardworker(ctx: XdpContext) -> Result<u32, ()> {
             match reserved {
                 Some(mut entry) => {
                     // 拷贝DATA_SIZE字节数据到ring_buf
-                    if let Ok(data) = ptr_at(&ctx, EthHdr::LEN + Ipv4Hdr::LEN + ((*tcphdr).doff() * 4) as usize) {
+                    if let Ok(data) = ptr_at(
+                        &ctx,
+                        EthHdr::LEN + Ipv4Hdr::LEN + ((*tcphdr).doff() * 4) as usize,
+                    ) {
                         entry.write(*data);
-                    }else {
-                        let data_size = ctx.data_end() - ctx.data() - EthHdr::LEN - Ipv4Hdr::LEN - ((*tcphdr).doff() * 4) as usize;
+                    } else {
+                        let data_size = ctx.data_end()
+                            - ctx.data()
+                            - EthHdr::LEN
+                            - Ipv4Hdr::LEN
+                            - ((*tcphdr).doff() * 4) as usize;
                         if data_size == 600 {
                             // 600字节数据，可能是tcp头部
-                            let data: Result<*const [u8; 600], ()> = ptr_at(&ctx, EthHdr::LEN + Ipv4Hdr::LEN + ((*tcphdr).doff() * 4) as usize);
-                            match data{
+                            let data: Result<*const [u8; 600], ()> = ptr_at(
+                                &ctx,
+                                EthHdr::LEN + Ipv4Hdr::LEN + ((*tcphdr).doff() * 4) as usize,
+                            );
+                            match data {
                                 Ok(data) => {
                                     let mut buffer = [0u8; DATA.size];
                                     let copy_size = core::cmp::min(600, DATA.size);
@@ -77,7 +175,10 @@ fn try_hardworker(ctx: XdpContext) -> Result<u32, ()> {
                                     entry.write(buffer);
                                 }
                                 Err(_) => {
-                                    error!(&ctx, "ptr_at load data 失败, data 长度为 {}", data_size);
+                                    error!(
+                                        &ctx,
+                                        "ptr_at load data 失败, data 长度为 {}", data_size
+                                    );
                                 }
                             }
                         }
