@@ -62,10 +62,12 @@ fn try_hardworker(ctx: XdpContext) -> Result<u32, ()> {
             match reserved {
                 Some(mut entry) => {
                     // 拷贝DATA_SIZE字节数据到ring_buf
-                    if let Ok(data) = ptr_at(&ctx, EthHdr::LEN + Ipv4Hdr::LEN) {
+                    if let Ok(data) = ptr_at(&ctx, EthHdr::LEN + Ipv4Hdr::LEN + ((*tcphdr).doff() * 4) as usize) {
                         entry.write(*data);
                     }else {
-                        error!(&ctx, "ptr_at load data 失败");
+                        let data_size = ctx.data_end() - ctx.data() - EthHdr::LEN - Ipv4Hdr::LEN - ((*tcphdr).doff() * 4) as usize;
+                        
+                        error!(&ctx, "ptr_at load data 失败, data 长度为 {}", data_size);
                     };
                     entry.submit(0);
                 }
