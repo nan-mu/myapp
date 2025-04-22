@@ -102,9 +102,9 @@ impl TcpHandler {
                                     }
                                     Ok(n) => {
                                         if n == self.config.size {
-                                            success.fetch_add(n, Ordering::SeqCst);
+                                            success.fetch_add(1, Ordering::SeqCst);
                                         } else {
-                                            fail.fetch_add(n, Ordering::SeqCst);
+                                            fail.fetch_add(1, Ordering::SeqCst);
                                         }
                                     }
                                     Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
