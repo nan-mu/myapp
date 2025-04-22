@@ -66,8 +66,21 @@ fn try_hardworker(ctx: XdpContext) -> Result<u32, ()> {
                         entry.write(*data);
                     }else {
                         let data_size = ctx.data_end() - ctx.data() - EthHdr::LEN - Ipv4Hdr::LEN - ((*tcphdr).doff() * 4) as usize;
-                        
-                        error!(&ctx, "ptr_at load data 失败, data 长度为 {}", data_size);
+                        if data_size == 600 {
+                            // 600字节数据，可能是tcp头部
+                            let data: Result<*const [u8; 600], ()> = ptr_at(&ctx, EthHdr::LEN + Ipv4Hdr::LEN + ((*tcphdr).doff() * 4) as usize);
+                            match data{
+                                Ok(data) => {
+                                    let mut buffer = [0u8; DATA.size];
+                                    let copy_size = core::cmp::min(600, DATA.size);
+                                    buffer[..copy_size].copy_from_slice(&(*data)[..copy_size]);
+                                    entry.write(buffer);
+                                }
+                                Err(_) => {
+                                    error!(&ctx, "ptr_at load data 失败, data 长度为 {}", data_size);
+                                }
+                            }
+                        }
                     };
                     entry.submit(0);
                 }
