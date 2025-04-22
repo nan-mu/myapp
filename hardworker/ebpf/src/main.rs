@@ -68,7 +68,7 @@ fn try_hardworker(ctx: XdpContext) -> Result<u32, ()> {
                         // 拷贝DATA_SIZE字节数据到ring_buf
                         if let Ok(data) = ptr_at(
                             &ctx,
-                            EthHdr::LEN + Ipv4Hdr::LEN + ((*tcphdr).doff() * 4) as usize,
+                            EthHdr::LEN + Ipv4Hdr::LEN + TcpHdr::LEN,
                         ) {
                             entry.write(*data);
                         } else {
@@ -77,9 +77,9 @@ fn try_hardworker(ctx: XdpContext) -> Result<u32, ()> {
                                 - EthHdr::LEN
                                 - Ipv4Hdr::LEN
                                 - ((*tcphdr).doff() * 4) as usize;
-                            
+
                             error!(&ctx, "ptr_at load data 失败, data 长度为 {}", data_size);
-                            if (*tcphdr).fin()  == 1 {
+                            if (*tcphdr).fin() == 1 {
                                 error!(&ctx, "FIN");
                             } else if (*tcphdr).syn() == 1 {
                                 error!(&ctx, "SYN");
@@ -108,7 +108,7 @@ fn try_hardworker(ctx: XdpContext) -> Result<u32, ()> {
                         // 拷贝DATA_SIZE字节数据到ring_buf
                         if let Ok(data) = ptr_at(
                             &ctx,
-                            EthHdr::LEN + Ipv4Hdr::LEN + ((*tcphdr).doff() * 4) as usize,
+                            EthHdr::LEN + Ipv4Hdr::LEN + TcpHdr::LEN,
                         ) {
                             entry.write(*data);
                         } else {
@@ -118,7 +118,7 @@ fn try_hardworker(ctx: XdpContext) -> Result<u32, ()> {
                                 - Ipv4Hdr::LEN
                                 - ((*tcphdr).doff() * 4) as usize;
                             error!(&ctx, "ptr_at load data 失败, data 长度为 {}", data_size);
-                            if (*tcphdr).fin()  == 1 {
+                            if (*tcphdr).fin() == 1 {
                                 error!(&ctx, "FIN");
                             } else if (*tcphdr).syn() == 1 {
                                 error!(&ctx, "SYN");
