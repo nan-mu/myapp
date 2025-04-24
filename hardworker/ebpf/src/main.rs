@@ -6,7 +6,7 @@ include!(concat!(env!("OUT_DIR"), "/const_gen.rs"));
 use aya_ebpf::{
     bindings::xdp_action,
     macros::{map, xdp},
-    maps::RingBuf,
+    maps::{PerCpuArray, RingBuf},
     programs::XdpContext,
 };
 use aya_log_ebpf::{debug, error};
@@ -28,6 +28,9 @@ const _: [(); 1] = [(); (RING_BUF_SIZE as usize <= 256 * 1024) as usize]; // 保
 
 #[map(name = "TARGET_MAP")]
 static mut TARGET_MAP: RingBuf = RingBuf::with_byte_size(RING_BUF_SIZE, 0);
+
+#[map(name = "SCRATCH_BUF")]
+static mut SCRATCH_BUF: PerCpuArray<[u8; DATA.mtu]> = PerCpuArray::with_max_entries(1, 0);
 
 fn try_hardworker(ctx: XdpContext) -> Result<u32, ()> {
     const TARGET_TOS: u8 = MARK.tos;
@@ -54,8 +57,12 @@ fn try_hardworker(ctx: XdpContext) -> Result<u32, ()> {
     if unsafe { (*tcphdr).dest } != MARK.port.swap_bytes() {
         return Ok(xdp_action::XDP_PASS);
     }
-    let mut buf = [0u8; DATA.mtu];
-    if let Some(size) = get_tcp_payload(&ctx, tcphdr, &mut buf) {
+
+    // 发送数据负载到ringbuf
+    #[allow(static_mut_refs)]
+    let scratch = unsafe { SCRATCH_BUF.get_ptr_mut(0).ok_or(())? };
+    let buf = unsafe { &mut *scratch };
+    if let Some(size) = get_tcp_payload(&ctx, tcphdr, buf) {
         #[allow(static_mut_refs)]
         let result = unsafe { TARGET_MAP.output(&buf[..size], 0) };
         match result {
@@ -70,9 +77,9 @@ fn try_hardworker(ctx: XdpContext) -> Result<u32, ()> {
 
     // 修改数据包发送字段，传输到日志器
     unsafe {
-        let ethhdr: *const EthHdr = ptr_at(&ctx, 0)?;
-        (*(ethhdr as *mut EthHdr)).src_addr = MAC.hardworker;
-        (*(ethhdr as *mut EthHdr)).dst_addr = MAC.logger;
+        let ethhdr: *mut EthHdr = ptr_at_mut(&ctx, 0)?;
+        (*ethhdr).src_addr = MAC.hardworker;
+        (*ethhdr).dst_addr = MAC.logger;
 
         let ip_csum = (*ipv4hdr).check.swap_bytes();
         let tcp_csum = (*tcphdr).check.swap_bytes();
@@ -83,9 +90,12 @@ fn try_hardworker(ctx: XdpContext) -> Result<u32, ()> {
         let ip_csum = update_checksum(ip_csum, old_ip, NEW_IP);
         let tcp_csum = update_checksum(tcp_csum, old_ip, NEW_IP);
 
-        (*(ipv4hdr as *mut Ipv4Hdr)).dst_addr = IP.logger.to_bits().swap_bytes();
-        (*(ipv4hdr as *mut Ipv4Hdr)).check = ip_csum.swap_bytes();
-        (*(tcphdr as *mut TcpHdr)).check = tcp_csum.swap_bytes();
+        let ipv4hdr = ipv4hdr as *mut Ipv4Hdr;
+        let tcphdr = tcphdr as *mut TcpHdr;
+
+        (*ipv4hdr).dst_addr = IP.logger.to_bits().swap_bytes();
+        (*ipv4hdr).check = ip_csum.swap_bytes();
+        (*tcphdr).check = tcp_csum.swap_bytes();
     }
 
     debug!(
@@ -127,6 +137,19 @@ fn ptr_at<T>(ctx: &XdpContext, offset: usize) -> Result<*const T, ()> {
     Ok((start + offset) as *const T)
 }
 
+#[inline(always)]
+fn ptr_at_mut<T>(ctx: &XdpContext, offset: usize) -> Result<*mut T, ()> {
+    let start = ctx.data();
+    let end = ctx.data_end();
+    let len = ::core::mem::size_of::<T>();
+
+    if start + offset + len > end {
+        return Err(());
+    }
+
+    Ok((start + offset) as *mut T)
+}
+
 /// 通过差异增量计算新的IP校验和
 /// 注意所有字段应当按照小端（be）顺序存储
 /// # 参数
@@ -150,7 +173,7 @@ fn update_checksum(old_csum: u16, old: u16, new: u16) -> u16 {
 }
 
 #[inline(always)]
-fn get_tcp_payload<'a>(ctx: &XdpContext, tcphdr: *const TcpHdr, buf: &mut [u8]) -> Option<usize> {
+fn get_tcp_payload<'a>(ctx: &XdpContext, tcphdr: *const TcpHdr, buf: &mut [u8; DATA.mtu]) -> Option<usize> {
     let start = unsafe {
         ctx.data()
             .add(EthHdr::LEN + Ipv4Hdr::LEN + ((*tcphdr).doff() * 4) as usize)
