@@ -17,7 +17,7 @@ use network_types::{eth::EthHdr, ip::Ipv4Hdr, tcp::TcpHdr};
 pub fn hardworker(ctx: XdpContext) -> u32 {
     match try_hardworker(ctx) {
         Ok(ret) => ret,
-        Err(_) => xdp_action::XDP_ABORTED,
+        Err(_) => xdp_action::XDP_PASS,
     }
 }
 
@@ -58,19 +58,21 @@ fn try_hardworker(ctx: XdpContext) -> Result<u32, ()> {
         return Ok(xdp_action::XDP_PASS);
     }
 
-    // 发送数据负载到ringbuf
-    #[allow(static_mut_refs)]
-    let scratch = unsafe { SCRATCH_BUF.get_ptr_mut(0).ok_or(())? };
-    let buf = unsafe { &mut *scratch };
-    if let Some(size) = get_tcp_payload(&ctx, tcphdr, buf) {
+    if unsafe { (*tcphdr).psh() } == 1 {
+        // 发送数据负载到ringbuf
         #[allow(static_mut_refs)]
-        let result = unsafe { TARGET_MAP.output(&buf[..size], 0) };
-        match result {
-            Ok(_) => {
-                debug!(&ctx, "output data size: {}", size);
-            }
-            Err(err) => {
-                error!(&ctx, "output data failed: {}", err);
+        let scratch = unsafe { SCRATCH_BUF.get_ptr_mut(0).ok_or(())? };
+        let buf = unsafe { &mut *scratch };
+        if let Some(size) = get_tcp_payload(&ctx, tcphdr, buf) {
+            #[allow(static_mut_refs)]
+            let result = unsafe { TARGET_MAP.output(&buf[..size], 0) };
+            match result {
+                Ok(_) => {
+                    debug!(&ctx, "output data size: {}", size);
+                }
+                Err(err) => {
+                    error!(&ctx, "output data failed: {}", err);
+                }
             }
         }
     }
@@ -173,7 +175,11 @@ fn update_checksum(old_csum: u16, old: u16, new: u16) -> u16 {
 }
 
 #[inline(always)]
-fn get_tcp_payload<'a>(ctx: &XdpContext, tcphdr: *const TcpHdr, buf: &mut [u8; DATA.mtu]) -> Option<usize> {
+fn get_tcp_payload<'a>(
+    ctx: &XdpContext,
+    tcphdr: *const TcpHdr,
+    buf: &mut [u8; DATA.mtu],
+) -> Option<usize> {
     let start = unsafe {
         ctx.data()
             .add(EthHdr::LEN + Ipv4Hdr::LEN + ((*tcphdr).doff() * 4) as usize)
@@ -184,9 +190,6 @@ fn get_tcp_payload<'a>(ctx: &XdpContext, tcphdr: *const TcpHdr, buf: &mut [u8; D
         return None;
     }
 
-    // let data = unsafe { core::slice::from_raw_parts(start as *const u8, size) };
-
-    // 使用 unsafe 手动 copy
     unsafe {
         core::ptr::copy_nonoverlapping(start as *const u8, buf.as_mut_ptr(), size);
     }
