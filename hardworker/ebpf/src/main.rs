@@ -9,8 +9,8 @@ use aya_ebpf::{
     maps::RingBuf,
     programs::XdpContext,
 };
-
 use aya_log_ebpf::{debug, error};
+use core::ops::Add;
 use network_types::{eth::EthHdr, ip::Ipv4Hdr, tcp::TcpHdr};
 
 #[xdp]
@@ -55,137 +55,15 @@ fn try_hardworker(ctx: XdpContext) -> Result<u32, ()> {
         return Ok(xdp_action::XDP_PASS);
     }
 
-    let psh = unsafe { (*tcphdr).psh() } == 1;
-    let ack = unsafe { (*tcphdr).ack() } == 1;
-
-    unsafe {
-        match (psh, ack) {
-            (true, true) => {
-                #[allow(static_mut_refs)]
-                let reserved = TARGET_MAP.reserve::<[u8; 600]>(0);
-                match reserved {
-                    Some(mut entry) => {
-                        // 拷贝DATA_SIZE字节数据到ring_buf
-                        if let Ok(data) = ptr_at(
-                            &ctx,
-                            EthHdr::LEN + Ipv4Hdr::LEN + TcpHdr::LEN,
-                        ) {
-                            entry.write(*data);
-                        } else {
-                            let data_size = ctx.data_end()
-                                - ctx.data()
-                                - EthHdr::LEN
-                                - Ipv4Hdr::LEN
-                                - ((*tcphdr).doff() * 4) as usize;
-
-                            error!(&ctx, "ptr_at load data 失败, data 长度为 {}", data_size);
-                            if (*tcphdr).fin() == 1 {
-                                error!(&ctx, "FIN");
-                            } else if (*tcphdr).syn() == 1 {
-                                error!(&ctx, "SYN");
-                            } else if (*tcphdr).rst() == 1 {
-                                error!(&ctx, "RST");
-                            } else if (*tcphdr).psh() == 1 {
-                                error!(&ctx, "PSH");
-                            } else if (*tcphdr).ack() == 1 {
-                                error!(&ctx, "ACK");
-                            } else if (*tcphdr).urg() == 1 {
-                                error!(&ctx, "URG");
-                            } else {
-                                error!(&ctx, "ERR");
-                            }
-                        };
-                        entry.submit(0);
-                    }
-                    None => error!(&ctx, "ring_buf 满！"),
-                }
+    if let Some(payload) = get_tcp_payload(&ctx, tcphdr) {
+        #[allow(static_mut_refs)]
+        let result = unsafe { TARGET_MAP.output(payload, 0) };
+        match result {
+            Ok(_) => {
+                debug!(&ctx, "output data size: {}", payload.len());
             }
-            (true, false) => {
-                #[allow(static_mut_refs)]
-                let reserved = TARGET_MAP.reserve::<[u8; DATA.size]>(0);
-                match reserved {
-                    Some(mut entry) => {
-                        // 拷贝DATA_SIZE字节数据到ring_buf
-                        if let Ok(data) = ptr_at(
-                            &ctx,
-                            EthHdr::LEN + Ipv4Hdr::LEN + TcpHdr::LEN,
-                        ) {
-                            entry.write(*data);
-                        } else {
-                            let data_size = ctx.data_end()
-                                - ctx.data()
-                                - EthHdr::LEN
-                                - Ipv4Hdr::LEN
-                                - ((*tcphdr).doff() * 4) as usize;
-                            error!(&ctx, "ptr_at load data 失败, data 长度为 {}", data_size);
-                            if (*tcphdr).fin() == 1 {
-                                error!(&ctx, "FIN");
-                            } else if (*tcphdr).syn() == 1 {
-                                error!(&ctx, "SYN");
-                            } else if (*tcphdr).rst() == 1 {
-                                error!(&ctx, "RST");
-                            } else if (*tcphdr).psh() == 1 {
-                                error!(&ctx, "PSH");
-                            } else if (*tcphdr).ack() == 1 {
-                                error!(&ctx, "ACK");
-                            } else if (*tcphdr).urg() == 1 {
-                                error!(&ctx, "URG");
-                            } else {
-                                error!(&ctx, "ERR");
-                            }
-                        };
-                        entry.submit(0);
-                    }
-                    None => error!(&ctx, "ring_buf 满！"),
-                }
-            }
-            _ => {}
-        }
-    }
-
-    if unsafe { (*tcphdr).psh() } == 1 {
-        unsafe {
-            #[allow(static_mut_refs)]
-            let reserved = TARGET_MAP.reserve::<[u8; DATA.size]>(0);
-            match reserved {
-                Some(mut entry) => {
-                    // 拷贝DATA_SIZE字节数据到ring_buf
-                    if let Ok(data) = ptr_at(
-                        &ctx,
-                        EthHdr::LEN + Ipv4Hdr::LEN + ((*tcphdr).doff() * 4) as usize,
-                    ) {
-                        entry.write(*data);
-                    } else {
-                        let data_size = ctx.data_end()
-                            - ctx.data()
-                            - EthHdr::LEN
-                            - Ipv4Hdr::LEN
-                            - ((*tcphdr).doff() * 4) as usize;
-                        if data_size == 600 {
-                            // 600字节数据，可能是tcp头部
-                            let data: Result<*const [u8; 600], ()> = ptr_at(
-                                &ctx,
-                                EthHdr::LEN + Ipv4Hdr::LEN + ((*tcphdr).doff() * 4) as usize,
-                            );
-                            match data {
-                                Ok(data) => {
-                                    let mut buffer = [0u8; DATA.size];
-                                    let copy_size = core::cmp::min(600, DATA.size);
-                                    buffer[..copy_size].copy_from_slice(&(*data)[..copy_size]);
-                                    entry.write(buffer);
-                                }
-                                Err(_) => {
-                                    error!(
-                                        &ctx,
-                                        "ptr_at load data 失败, data 长度为 {}", data_size
-                                    );
-                                }
-                            }
-                        }
-                    };
-                    entry.submit(0);
-                }
-                None => error!(&ctx, "ring_buf 满！"),
+            Err(err) => {
+                error!(&ctx, "output data failed: {}", err);
             }
         }
     }
@@ -269,6 +147,21 @@ fn update_checksum(old_csum: u16, old: u16, new: u16) -> u16 {
     let csum = csum + (csum >> 16);
 
     (!csum as u16) & 0xFFFF // 再次取反得到新校验和
+}
+
+#[inline(always)]
+fn get_tcp_payload<'a>(ctx: &XdpContext, tcphdr: *const TcpHdr) -> Option<&'a [u8]> {
+    let start = unsafe {
+        ctx.data()
+            .add(EthHdr::LEN + Ipv4Hdr::LEN + ((*tcphdr).doff() * 4) as usize)
+    };
+    let end = ctx.data_end();
+    let size = end.saturating_sub(start as usize);
+    if size == 0 || size > 4096 {
+        return None;
+    }
+
+    unsafe { Some(core::slice::from_raw_parts(start as *const u8, size)) }
 }
 
 #[cfg(not(test))]

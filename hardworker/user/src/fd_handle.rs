@@ -15,7 +15,7 @@ const FD: Token = Token(0);
 
 pub struct FdHandleBuilder {
     ringbuf: RingBuf<MapData>,
-    size: usize,
+    // size: usize,
     events: usize,
 }
 
@@ -28,7 +28,7 @@ pub struct FdHandleBuilder {
 impl FdHandleBuilder {
     /// Create a new `FdHandleBuilder` with the given file descriptor.
     /// Defaults to readable interest, and 1024 events.
-    pub fn new(ringbuf: RingBuf<MapData>, size: usize) -> Result<Self> {
+    pub fn new(ringbuf: RingBuf<MapData>, _size: usize) -> Result<Self> {
         // 设置fd为非阻塞读写。
         // TODO: 考虑是否暴露上层
         let fd = ringbuf.as_raw_fd();
@@ -38,7 +38,7 @@ impl FdHandleBuilder {
         debug!("fd: {fd} 设置为非阻塞读写");
         Ok(Self {
             ringbuf,
-            size,
+            // size,
             events: 1024,
         })
     }
@@ -75,13 +75,18 @@ impl FdHandleBuilder {
                 for event in &events {
                     if event.token() == FD {
                         if let Some(item) = ringbuf.next(){
-                            if item.len() == self.size {
-                                success
-                                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                            }else {
-                                debug!("ringbuf数据长度错误: {}", item.len());
-                            }
+                            // if item.len() == self.size {
+                            //     success
+                            //         .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                            // }else {
+                            //     debug!("ringbuf数据长度错误: {}", item.len());
+                            // }
+                            success
+                                .fetch_add(item.len(), std::sync::atomic::Ordering::SeqCst);
+
                             drop(item)
+                        } else {
+                            debug!("用户态ringbuf数据读取失败");
                         };
 
                         // 需要时重新注册事件（EPOLLONESHOT模式下必须）

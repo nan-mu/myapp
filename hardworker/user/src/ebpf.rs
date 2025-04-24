@@ -51,7 +51,7 @@ impl EbpfBuilder {
             .attach(&self.ifname, XdpFlags::default())
             .context("默认flag连接xdp失败，考虑特定flag")?;
         debug!("ebpf 附加到设备 {} 成功", self.ifname);
-        Ok(EbpfHandle { ebpf: ebpf })
+        Ok(EbpfHandle { ebpf })
     }
 }
 
