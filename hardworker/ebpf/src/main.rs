@@ -54,13 +54,13 @@ fn try_hardworker(ctx: XdpContext) -> Result<u32, ()> {
     if unsafe { (*tcphdr).dest } != MARK.port.swap_bytes() {
         return Ok(xdp_action::XDP_PASS);
     }
-
-    if let Some(payload) = get_tcp_payload(&ctx, tcphdr) {
+    let mut buf = [0u8; DATA.mtu];
+    if let Some(size) = get_tcp_payload(&ctx, tcphdr, &mut buf) {
         #[allow(static_mut_refs)]
-        let result = unsafe { TARGET_MAP.output(payload, 0) };
+        let result = unsafe { TARGET_MAP.output(&buf[..size], 0) };
         match result {
             Ok(_) => {
-                debug!(&ctx, "output data size: {}", payload.len());
+                debug!(&ctx, "output data size: {}", size);
             }
             Err(err) => {
                 error!(&ctx, "output data failed: {}", err);
@@ -150,7 +150,7 @@ fn update_checksum(old_csum: u16, old: u16, new: u16) -> u16 {
 }
 
 #[inline(always)]
-fn get_tcp_payload<'a>(ctx: &XdpContext, tcphdr: *const TcpHdr) -> Option<&'a [u8]> {
+fn get_tcp_payload<'a>(ctx: &XdpContext, tcphdr: *const TcpHdr, buf: &mut [u8]) -> Option<usize> {
     let start = unsafe {
         ctx.data()
             .add(EthHdr::LEN + Ipv4Hdr::LEN + ((*tcphdr).doff() * 4) as usize)
@@ -161,7 +161,13 @@ fn get_tcp_payload<'a>(ctx: &XdpContext, tcphdr: *const TcpHdr) -> Option<&'a [u
         return None;
     }
 
-    unsafe { Some(core::slice::from_raw_parts(start as *const u8, size)) }
+    // let data = unsafe { core::slice::from_raw_parts(start as *const u8, size) };
+
+    // 使用 unsafe 手动 copy
+    unsafe {
+        core::ptr::copy_nonoverlapping(start as *const u8, buf.as_mut_ptr(), size);
+    }
+    Some(size)
 }
 
 #[cfg(not(test))]
