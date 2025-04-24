@@ -58,21 +58,20 @@ fn try_hardworker(ctx: XdpContext) -> Result<u32, ()> {
         return Ok(xdp_action::XDP_PASS);
     }
 
+    // 发送数据负载到ringbuf
     if unsafe { (*tcphdr).psh() } == 1 {
-        // 发送数据负载到ringbuf
         #[allow(static_mut_refs)]
         let scratch = unsafe { SCRATCH_BUF.get_ptr_mut(0).ok_or(())? };
         let buf = unsafe { &mut *scratch };
-        if let Some(size) = get_tcp_payload(&ctx, tcphdr, buf) {
-            #[allow(static_mut_refs)]
-            let result = unsafe { TARGET_MAP.output(&buf[..size], 0) };
-            match result {
-                Ok(_) => {
-                    debug!(&ctx, "output data size: {}", size);
-                }
-                Err(err) => {
-                    error!(&ctx, "output data failed: {}", err);
-                }
+        let size = get_tcp_payload(&ctx, tcphdr, buf)?;
+        #[allow(static_mut_refs)]
+        let result = unsafe { TARGET_MAP.output(&buf[..size], 0) };
+        match result {
+            Ok(_) => {
+                debug!(&ctx, "output data size: {}", size);
+            }
+            Err(err) => {
+                error!(&ctx, "output data failed: {}", err);
             }
         }
     }
@@ -179,7 +178,7 @@ fn get_tcp_payload<'a>(
     ctx: &XdpContext,
     tcphdr: *const TcpHdr,
     buf: &mut [u8; DATA.mtu],
-) -> Option<usize> {
+) -> Result<usize, ()> {
     let start = unsafe {
         ctx.data()
             .add(EthHdr::LEN + Ipv4Hdr::LEN + ((*tcphdr).doff() * 4) as usize)
@@ -187,13 +186,13 @@ fn get_tcp_payload<'a>(
     let end = ctx.data_end();
     let size = end.saturating_sub(start as usize);
     if size == 0 || size > 4096 {
-        return None;
+        return Err(());
     }
 
     unsafe {
         core::ptr::copy_nonoverlapping(start as *const u8, buf.as_mut_ptr(), size);
     }
-    Some(size)
+    Ok(size)
 }
 
 #[cfg(not(test))]
