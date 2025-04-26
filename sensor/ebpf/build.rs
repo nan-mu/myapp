@@ -97,7 +97,7 @@ struct Ip {
 #[derive(CompileConst, Deserialize)]
 struct Data {
     mtu: usize,
-    load_u64_count: usize,
+    size: usize,
 }
 
 #[derive(CompileConst, Deserialize)]

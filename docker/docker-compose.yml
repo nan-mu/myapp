@@ -1,0 +1,64 @@
+services:
+  influxdb:
+    image: influxdb:latest
+    container_name: influxdb
+    ports:
+      - "8086:8086"  # Web UI
+    environment:
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_ORG=fukuda
+      - DOCKER_INFLUXDB_INIT_BUCKET=telegraf
+      - DOCKER_INFLUXDB_INIT_USERNAME_FILE=/run/secrets/influxdb2_admin_username
+      - DOCKER_INFLUXDB_INIT_PASSWORD_FILE=/run/secrets/influxdb2_admin_password
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN_FILE=/run/secrets/influxdb2_admin_token
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+    networks:
+      - measure
+    secrets:
+      - influxdb2_admin_username
+      - influxdb2_admin_password
+      - influxdb2_admin_token
+  telegraf:
+    image: telegraf:latest
+    container_name: telegraf
+    volumes:
+      - /:/hostfs:ro
+      - ./telegraf.conf:/etc/telegraf/telegraf.conf:ro
+    environment:
+      - HOST_ETC=/hostfs/etc
+      - HOST_PROC=/hostfs/proc
+      - HOST_SYS=/hostfs/sys
+      - HOST_VAR=/hostfs/var
+      - HOST_RUN=/hostfs/run
+      - HOST_MOUNT_PREFIX=/hostfs
+      - HOST_HOSTNAME=${HOSTNAMEFORTELEGRAM}
+    secrets:
+      - influxdb2_admin_token
+    networks:
+      - measure
+    healthcheck:
+      test: >
+        sh -c 'test -n "$$HOST_HOSTNAME" &&
+               ! grep -q "E!" /var/log/telegraf/telegraf.log'
+      interval: 180s
+      timeout: 10s
+      retries: 3
+      start_period: 1m  # 初始缓冲期
+
+
+
+volumes:
+  influxdb-data:
+
+networks:
+  measure:
+    driver: bridge
+
+secrets:
+  influxdb2_admin_password:
+    file: ./.env.influxdb2_admin_password
+  influxdb2_admin_username:
+    file: ./.env.influxdb2_admin_username
+  influxdb2_admin_token:
+    file: ./.env.influxdb2_admin_token

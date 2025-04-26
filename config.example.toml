@@ -1,0 +1,35 @@
+# 程序超时时间(秒)，不指定时将关闭超时退出
+# timeout = 1000
+
+[daemon]
+# true时将尝试连接其他设备得到网络拓扑并指示所有设备编译ebpf程序。
+explore = false
+# 角色，explore字段启用时向其他设备声明自己的角色。网络中有角色缺失时报错
+# 未指定时将尝试从设备名称提取。如/.*sensor/将被是为sensor
+# role = "sensor"
+# true时将尝试重写const.toml。在这之前会校验本文件是否包含重写所需所有字段。
+# explore字段禁用时有字段缺失会让程序退出。
+# false时若explore字段启用将无视false强制重写const。日志将输出warn。
+rewrite_const = false
+
+# TCP通信配置
+[tcp]
+# 调试用网卡，不指定时将按照路由
+# ifname = "wlan0"
+
+# 调试用目标IP和端口，不指定时将从const.toml读取hardworker的值
+# ip = "192.168.1.79"
+# port = 12345
+
+# 调试用目标设备。sensor将读取该值并发送到值指定的设备。
+# 希望测量非ebpf加速时性能时使用。一般设置为logger
+target = "logger"
+
+# 调试用TOS值（支持十六进制格式），不指定时将从const.toml读取hardworker的值
+# tos = "0x6c"
+
+# 每个数据包大小(字节)，不指定时将从const.toml读取hardworker的值
+size = 1200
+
+# 发送频率(Hz)，必须包含
+freq = 100.0

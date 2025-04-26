@@ -13,5 +13,5 @@ tos = 104
 port = 12345
 
 [data]
-mtu = 1200
-load_u64_count = 128
+mtu = 1500
+size = 1024
