@@ -61,9 +61,7 @@ fn try_hardworker(ctx: XdpContext) -> Result<u32, ()> {
         return Ok(xdp_action::XDP_PASS);
     }
 
-    let offset = unsafe {
-        EthHdr::LEN + Ipv4Hdr::LEN + ((*tcphdr).doff() * 4) as usize
-    };
+    let offset = unsafe { EthHdr::LEN + Ipv4Hdr::LEN + ((*tcphdr).doff() * 4) as usize };
 
     // 从末尾计算 但似乎无法通过检查器 不让包尾指针参与数值计算
     //let end = ctx.data_end();
@@ -84,7 +82,7 @@ fn try_hardworker(ctx: XdpContext) -> Result<u32, ()> {
     }
 
     // 判断是否存在负载数据
-    if size > 0 && size < DATA.mtu{
+    if size > 0 && size < DATA.mtu {
         #[allow(static_mut_refs)]
         if let Some(mut event) = unsafe { TARGET_MAP.reserve::<LoadData>(0) } {
             let ptr = event.as_mut_ptr();
@@ -99,6 +97,10 @@ fn try_hardworker(ctx: XdpContext) -> Result<u32, ()> {
                 while i + 4 <= size {
                     let src = start_ptr.add(i) as *const u32;
                     if (src as *const u8).add(4) as usize > ctx.data_end() {
+                        let _ = ptr;
+                        let _ = src;
+                        let _ = dst_ptr;
+                        event.discard(0);
                         return Err(());
                     }
                     let value = ptr::read_unaligned(src);
@@ -110,15 +112,17 @@ fn try_hardworker(ctx: XdpContext) -> Result<u32, ()> {
                 while i < size {
                     let src = start_ptr.add(i);
                     if src as usize >= ctx.data_end() {
+                        let _ = ptr;
+                        let _ = src;
+                        let _ = dst_ptr;
+                        event.discard(0);
                         return Err(());
                     }
                     let byte = ptr::read_unaligned(src);
                     ptr::write(dst_ptr.add(i), byte);
                     i += 1;
                 }
-                //core::ptr::copy_nonoverlapping(start as *const u8, (*ptr).data.as_mut_ptr(), size);
             }
-            // = ptr_at(&ctx, start);
             let _ = ptr;
             event.submit(0);
         }
