@@ -68,22 +68,23 @@ fn try_hardworker(ctx: XdpContext) -> Result<u32, ()> {
     // 从末尾计算 但似乎无法通过检查器 不让包尾指针参与数值计算
     //let end = ctx.data_end();
     //let size = end.saturating_sub(start as usize);
+
     let size = unsafe {
         (*ipv4hdr).tot_len.swap_bytes() as usize - Ipv4Hdr::LEN - ((*tcphdr).doff() * 4) as usize
     };
-    // let end = start.add(size);
+    let end = offset + size;
 
-    if offset + size > 1500 {
+    if end > 1500 {
         return Ok(xdp_action::XDP_PASS);
     }
 
-    if ctx.data() + offset + size <= ctx.data_end() as usize {
+    if ctx.data() + end <= ctx.data_end() as usize {
         // assume that is right all time, so we can return PASS because that will never happen.
         return Ok(xdp_action::XDP_PASS);
     }
 
     // 判断是否存在负载数据
-    if size > 0 && size < 4096 {
+    if size > 0 && size < DATA.mtu{
         #[allow(static_mut_refs)]
         if let Some(mut event) = unsafe { TARGET_MAP.reserve::<LoadData>(0) } {
             let ptr = event.as_mut_ptr();
@@ -118,6 +119,7 @@ fn try_hardworker(ctx: XdpContext) -> Result<u32, ()> {
                 //core::ptr::copy_nonoverlapping(start as *const u8, (*ptr).data.as_mut_ptr(), size);
             }
             // = ptr_at(&ctx, start);
+            let _ = ptr;
             event.submit(0);
         }
     }
