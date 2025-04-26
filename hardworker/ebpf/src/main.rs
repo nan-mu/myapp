@@ -10,7 +10,7 @@ use aya_ebpf::{
     programs::XdpContext,
 };
 use aya_log_ebpf::debug;
-use core::{ops::Add, ptr};
+use core::ptr;
 use network_types::{eth::EthHdr, ip::Ipv4Hdr, tcp::TcpHdr};
 
 #[xdp]
@@ -61,9 +61,8 @@ fn try_hardworker(ctx: XdpContext) -> Result<u32, ()> {
         return Ok(xdp_action::XDP_PASS);
     }
 
-    let start = unsafe {
-        ctx.data()
-            .add(EthHdr::LEN + Ipv4Hdr::LEN + ((*tcphdr).doff() * 4) as usize)
+    let offset = unsafe {
+        EthHdr::LEN + Ipv4Hdr::LEN + ((*tcphdr).doff() * 4) as usize
     };
 
     // 从末尾计算 但似乎无法通过检查器 不让包尾指针参与数值计算
@@ -74,7 +73,11 @@ fn try_hardworker(ctx: XdpContext) -> Result<u32, ()> {
     };
     // let end = start.add(size);
 
-    if start + size <= ctx.data_end() as usize {
+    if offset + size > 1500 {
+        return Ok(xdp_action::XDP_PASS);
+    }
+
+    if ctx.data() + offset + size <= ctx.data_end() as usize {
         // assume that is right all time, so we can return PASS because that will never happen.
         return Ok(xdp_action::XDP_PASS);
     }
@@ -88,7 +91,7 @@ fn try_hardworker(ctx: XdpContext) -> Result<u32, ()> {
                 (*ptr).data_len = size as u16;
                 let mut i = 0;
 
-                let start_ptr = start as *const u8;
+                let start_ptr = (ctx.data() + offset) as *const u8;
                 let dst_ptr = (*ptr).data.as_mut_ptr() as *mut u8;
 
                 // 先尽量按4字节块拷贝
