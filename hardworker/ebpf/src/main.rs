@@ -10,7 +10,6 @@ use aya_ebpf::{
     programs::XdpContext,
 };
 use aya_log_ebpf::debug;
-use core::ptr;
 use network_types::{eth::EthHdr, ip::Ipv4Hdr, tcp::TcpHdr};
 
 #[xdp]
@@ -88,40 +87,15 @@ fn try_hardworker(ctx: XdpContext) -> Result<u32, ()> {
             let ptr = event.as_mut_ptr();
             unsafe {
                 (*ptr).data_len = size as u16;
-                let mut i = 0;
-
-                let start_ptr = (ctx.data() + offset) as *const u8;
-                let dst_ptr = (*ptr).data.as_mut_ptr() as *mut u8;
-
-                // 先尽量按4字节块拷贝
-                while i + 4 <= size {
-                    let src = start_ptr.add(i) as *const u32;
-                    if (src as *const u8).add(4) as usize > ctx.data_end() {
-                        let _ = ptr;
-                        let _ = src;
-                        let _ = dst_ptr;
+                let data: *const [u8; DATA.size] = match ptr_at(&ctx, offset){
+                    Ok(data) => data,
+                    Err(_) => {
                         event.discard(0);
                         return Err(());
                     }
-                    let value = ptr::read_unaligned(src);
-                    ptr::write_unaligned(dst_ptr.add(i) as *mut u32, value);
-                    i += 4;
-                }
-
-                // 剩下不足4字节的部分，一字节一字节拷贝
-                while i < size {
-                    let src = start_ptr.add(i);
-                    if src as usize >= ctx.data_end() {
-                        let _ = ptr;
-                        let _ = src;
-                        let _ = dst_ptr;
-                        event.discard(0);
-                        return Err(());
-                    }
-                    let byte = ptr::read_unaligned(src);
-                    ptr::write(dst_ptr.add(i), byte);
-                    i += 1;
-                }
+                };
+                (*ptr).data.copy_from_slice(&(*data)[..size]);
+                (*ptr).data[size as usize..].fill(0);
             }
             let _ = ptr;
             event.submit(0);
