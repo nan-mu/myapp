@@ -10,12 +10,8 @@ use aya_ebpf::{
     programs::XdpContext,
 };
 use aya_log_ebpf::debug;
-use core::ops::Add;
-use network_types::{
-    eth::EthHdr,
-    ip::Ipv4Hdr,
-    tcp::TcpHdr,
-};
+use core::{ops::Add, ptr};
+use network_types::{eth::EthHdr, ip::Ipv4Hdr, tcp::TcpHdr};
 
 #[xdp]
 pub fn hardworker(ctx: XdpContext) -> u32 {
@@ -69,8 +65,19 @@ fn try_hardworker(ctx: XdpContext) -> Result<u32, ()> {
         ctx.data()
             .add(EthHdr::LEN + Ipv4Hdr::LEN + ((*tcphdr).doff() * 4) as usize)
     };
-    let end = ctx.data_end();
-    let size = end.saturating_sub(start as usize);
+
+    // 从末尾计算 但似乎无法通过检查器 不让包尾指针参与数值计算
+    //let end = ctx.data_end();
+    //let size = end.saturating_sub(start as usize);
+    let size = unsafe {
+        (*ipv4hdr).tot_len.swap_bytes() as usize - Ipv4Hdr::LEN - ((*tcphdr).doff() * 4) as usize
+    };
+    // let end = start.add(size);
+
+    if start + size <= ctx.data_end() as usize {
+        // assume that is right all time, so we can return PASS because that will never happen.
+        return Ok(xdp_action::XDP_PASS);
+    }
 
     // 判断是否存在负载数据
     if size > 0 && size < 4096 {
@@ -79,8 +86,36 @@ fn try_hardworker(ctx: XdpContext) -> Result<u32, ()> {
             let ptr = event.as_mut_ptr();
             unsafe {
                 (*ptr).data_len = size as u16;
-                core::ptr::copy_nonoverlapping(start as *const u8, (*ptr).data.as_mut_ptr(), size);
+                let mut i = 0;
+
+                let start_ptr = start as *const u8;
+                let dst_ptr = (*ptr).data.as_mut_ptr() as *mut u8;
+
+                // 先尽量按4字节块拷贝
+                while i + 4 <= size {
+                    let src = start_ptr.add(i) as *const u32;
+                    if (src as *const u8).add(4) as usize > ctx.data_end() {
+                        return Err(());
+                    }
+                    let value = ptr::read_unaligned(src);
+                    ptr::write_unaligned(dst_ptr.add(i) as *mut u32, value);
+                    i += 4;
+                }
+
+                // 剩下不足4字节的部分，一字节一字节拷贝
+                while i < size {
+                    let src = start_ptr.add(i);
+                    if src as usize >= ctx.data_end() {
+                        return Err(());
+                    }
+                    let byte = ptr::read_unaligned(src);
+                    ptr::write(dst_ptr.add(i), byte);
+                    i += 1;
+                }
+                //core::ptr::copy_nonoverlapping(start as *const u8, (*ptr).data.as_mut_ptr(), size);
             }
+            // = ptr_at(&ctx, start);
+            event.submit(0);
         }
     }
 
