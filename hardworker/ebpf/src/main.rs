@@ -9,7 +9,7 @@ use aya_ebpf::{
     maps::RingBuf,
     programs::XdpContext,
 };
-use aya_log_ebpf::debug;
+use aya_log_ebpf::{debug, error};
 use network_types::{eth::EthHdr, ip::Ipv4Hdr, tcp::TcpHdr};
 
 #[xdp]
@@ -31,7 +31,7 @@ static mut TARGET_MAP: RingBuf = RingBuf::with_byte_size(RING_BUF_SIZE, 0);
 #[repr(C)]
 struct LoadData {
     pub data_len: u16,
-    pub data: [u8; DATA.mtu],
+    pub data: [u8; DATA.size],
 }
 
 fn try_hardworker(ctx: XdpContext) -> Result<u32, ()> {
@@ -83,22 +83,24 @@ fn try_hardworker(ctx: XdpContext) -> Result<u32, ()> {
     // 判断是否存在负载数据
     if size > 0 && size < DATA.mtu {
         #[allow(static_mut_refs)]
-        if let Some(mut event) = unsafe { TARGET_MAP.reserve::<LoadData>(0) } {
-            let ptr = event.as_mut_ptr();
-            unsafe {
-                (*ptr).data_len = size as u16;
-                let data: *const [u8; DATA.size] = match ptr_at(&ctx, offset){
-                    Ok(data) => data,
-                    Err(_) => {
-                        event.discard(0);
-                        return Err(());
+        let reserved = unsafe { TARGET_MAP.reserve::<LoadData>(0) };
+        match reserved {
+            Some(mut entry) => {
+                // 拷贝DATA_SIZE字节数据到ring_buf
+                if let Ok(data) = ptr_at::<[u8; DATA.size]>(&ctx, offset) {
+                    // entry.write(*LoadData { data_len: size as u16, data: unsafe { *data } });
+                    let ptr = entry.as_mut_ptr();
+                    unsafe {
+                        (*ptr).data_len = size as u16;
+                        (*ptr).data.copy_from_slice(&(*data)[..size]);
                     }
+                    entry.submit(0);
+                } else {
+                    entry.discard(0);
+                    error!(&ctx, "ptr_at load data 失败, data 长度为 {}", size);
                 };
-                (*ptr).data.copy_from_slice(&(*data)[..size]);
-                (*ptr).data[size as usize..].fill(0);
             }
-            let _ = ptr;
-            event.submit(0);
+            None => error!(&ctx, "ring_buf 满！"),
         }
     }
 
