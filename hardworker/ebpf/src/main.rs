@@ -6,12 +6,16 @@ include!(concat!(env!("OUT_DIR"), "/const_gen.rs"));
 use aya_ebpf::{
     bindings::xdp_action,
     macros::{map, xdp},
-    maps::{PerCpuArray, RingBuf},
+    maps::RingBuf,
     programs::XdpContext,
 };
-use aya_log_ebpf::{debug, error};
+use aya_log_ebpf::debug;
 use core::ops::Add;
-use network_types::{eth::EthHdr, ip::Ipv4Hdr, tcp::TcpHdr};
+use network_types::{
+    eth::EthHdr,
+    ip::Ipv4Hdr,
+    tcp::TcpHdr,
+};
 
 #[xdp]
 pub fn hardworker(ctx: XdpContext) -> u32 {
@@ -22,15 +26,18 @@ pub fn hardworker(ctx: XdpContext) -> u32 {
 }
 
 // 计划传输几个u64大小
-const RING_BUF_SIZE: u32 = 16 * (DATA.size) as u32;
+const RING_BUF_SIZE: u32 = 16 * (DATA.mtu) as u32;
 const _: [(); 1] = [(); ((DATA.size + Ipv4Hdr::LEN + TcpHdr::LEN) <= DATA.mtu) as usize]; // 保守负载大小
 const _: [(); 1] = [(); (RING_BUF_SIZE as usize <= 256 * 1024) as usize]; // 保守ringbuf大小
 
 #[map(name = "TARGET_MAP")]
 static mut TARGET_MAP: RingBuf = RingBuf::with_byte_size(RING_BUF_SIZE, 0);
 
-#[map(name = "SCRATCH_BUF")]
-static mut SCRATCH_BUF: PerCpuArray<[u8; DATA.mtu]> = PerCpuArray::with_max_entries(1, 0);
+#[repr(C)]
+struct LoadData {
+    pub data_len: u16,
+    pub data: [u8; DATA.mtu],
+}
 
 fn try_hardworker(ctx: XdpContext) -> Result<u32, ()> {
     const TARGET_TOS: u8 = MARK.tos;
@@ -58,23 +65,42 @@ fn try_hardworker(ctx: XdpContext) -> Result<u32, ()> {
         return Ok(xdp_action::XDP_PASS);
     }
 
-    // 发送数据负载到ringbuf
-    if unsafe { (*tcphdr).psh() } == 1 {
+    let start = unsafe {
+        ctx.data()
+            .add(EthHdr::LEN + Ipv4Hdr::LEN + ((*tcphdr).doff() * 4) as usize)
+    };
+    let end = ctx.data_end();
+    let size = end.saturating_sub(start as usize);
+
+    // 判断是否存在负载数据
+    if size > 0 && size < 4096 {
         #[allow(static_mut_refs)]
-        let scratch = unsafe { SCRATCH_BUF.get_ptr_mut(0).ok_or(())? };
-        let buf = unsafe { &mut *scratch };
-        let size = get_tcp_payload(&ctx, tcphdr, buf)?;
-        #[allow(static_mut_refs)]
-        let result = unsafe { TARGET_MAP.output(&buf[..size], 0) };
-        match result {
-            Ok(_) => {
-                debug!(&ctx, "output data size: {}", size);
-            }
-            Err(err) => {
-                error!(&ctx, "output data failed: {}", err);
+        if let Some(mut event) = unsafe { TARGET_MAP.reserve::<LoadData>(0) } {
+            let ptr = event.as_mut_ptr();
+            unsafe {
+                (*ptr).data_len = size as u16;
+                core::ptr::copy_nonoverlapping(start as *const u8, (*ptr).data.as_mut_ptr(), size);
             }
         }
     }
+
+    // 发送数据负载到ringbuf
+    // if unsafe { (*tcphdr).psh() } == 1 {
+    //     #[allow(static_mut_refs)]
+    //     let scratch = unsafe { SCRATCH_BUF.get_ptr_mut(0).ok_or(())? };
+    //     let buf = unsafe { &mut *scratch };
+    //     let size = get_tcp_payload(&ctx, tcphdr, buf)?;
+    //     #[allow(static_mut_refs)]
+    //     let result = unsafe { TARGET_MAP.output(&buf[..size], 0) };
+    //     match result {
+    //         Ok(_) => {
+    //             debug!(&ctx, "output data size: {}", size);
+    //         }
+    //         Err(err) => {
+    //             error!(&ctx, "output data failed: {}", err);
+    //         }
+    //     }
+    // }
 
     // 修改数据包发送字段，传输到日志器
     unsafe {
@@ -171,28 +197,6 @@ fn update_checksum(old_csum: u16, old: u16, new: u16) -> u16 {
     let csum = csum + (csum >> 16);
 
     (!csum as u16) & 0xFFFF // 再次取反得到新校验和
-}
-
-#[inline(always)]
-fn get_tcp_payload<'a>(
-    ctx: &XdpContext,
-    tcphdr: *const TcpHdr,
-    buf: &mut [u8; DATA.mtu],
-) -> Result<usize, ()> {
-    let start = unsafe {
-        ctx.data()
-            .add(EthHdr::LEN + Ipv4Hdr::LEN + ((*tcphdr).doff() * 4) as usize)
-    };
-    let end = ctx.data_end();
-    let size = end.saturating_sub(start as usize);
-    if size == 0 || size > 4096 {
-        return Err(());
-    }
-
-    unsafe {
-        core::ptr::copy_nonoverlapping(start as *const u8, buf.as_mut_ptr(), size);
-    }
-    Ok(size)
 }
 
 #[cfg(not(test))]
